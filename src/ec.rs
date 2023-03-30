@@ -1,0 +1,197 @@
+use crate::utils::find_roots;
+use ark_ff::Field;
+use ark_ff::Zero;
+use ark_poly::univariate::DensePolynomial;
+use ark_poly::DenseUVPolynomial;
+use ark_poly::Polynomial;
+use std::ops::Add;
+
+/// Curve of the form y^2 = x^3 + a*x + b
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Curve<F> {
+    a: F,
+    b: F,
+}
+
+impl<F: Field> Curve<F> {
+    fn new(a: F, b: F) -> Self {
+        Self { a, b }
+    }
+
+    pub fn two_isogenies(&self) -> Vec<Isogeny<F>> {
+        // Find all the points of order two and then use Velu's formula to find all
+        // the 2-isogenies. Velu's formula: https://math.mit.edu/~drew/CTNT2018.pdf
+        self.two_torsion_points()
+            .into_iter()
+            .map(|point| {
+                let x0 = point.x;
+                let t = F::from(3u8) * x0 * x0 + self.a;
+
+                let domain = *self;
+                let codomain = Self::new(self.a - F::from(5u8) * t, self.b - F::from(7u8) * x0 * t);
+
+                // ϕ: E -> E' := ((x^2 - x0*x + t)/(x - x0), ((x - x0)^2 - t)/(x - x0)^2 * y)
+                let x_map_numerator = &[t, -x0, F::one()];
+                let x_map_denominator = &[-x0, F::one()];
+                let y_map_numerator = &[x0 * x0 - t, -(x0 + x0), F::one()];
+                let y_map_denominator = &[x0 * x0, -(x0 + x0), F::one()];
+
+                Isogeny::new(
+                    domain,
+                    codomain,
+                    DensePolynomial::from_coefficients_slice(x_map_numerator),
+                    DensePolynomial::from_coefficients_slice(x_map_denominator),
+                    DensePolynomial::from_coefficients_slice(y_map_numerator),
+                    DensePolynomial::from_coefficients_slice(y_map_denominator),
+                )
+            })
+            .collect()
+    }
+
+    /// Returns all non-zero points on the curve that have order 2.
+    fn two_torsion_points(&self) -> Vec<Point<F>> {
+        // The two torsion points have a vertical tangent since 2*P = 0.
+        // The points with vertical tangent are those with y = 0.
+        // We can find the points if we find the values of x satisfy 0 = x^3 + a*x + b.
+        let x3_ax_b_coeffs = &[self.b, self.a, F::zero(), F::one()];
+        let roots = find_roots(&DensePolynomial::from_coefficients_slice(x3_ax_b_coeffs));
+        roots
+            .into_iter()
+            .map(|root| Point::new(root, F::zero(), self))
+            .collect()
+    }
+}
+
+pub struct Isogeny<F: Field> {
+    domain: Curve<F>,
+    codomain: Curve<F>,
+    pub x_numerator_map: DensePolynomial<F>,
+    pub x_denominator_map: DensePolynomial<F>,
+    pub y_numerator_map: DensePolynomial<F>,
+    pub y_denominator_map: DensePolynomial<F>,
+}
+
+impl<F: Field> Isogeny<F> {
+    pub fn new(
+        domain: Curve<F>,
+        codomain: Curve<F>,
+        x_numerator_map: DensePolynomial<F>,
+        x_denominator_map: DensePolynomial<F>,
+        y_numerator_map: DensePolynomial<F>,
+        y_denominator_map: DensePolynomial<F>,
+    ) -> Self {
+        Self {
+            domain,
+            codomain,
+            x_numerator_map,
+            x_denominator_map,
+            y_numerator_map,
+            y_denominator_map,
+        }
+    }
+
+    pub fn map_x(&self, x: F) -> F {
+        self.x_numerator_map.evaluate(&x) / self.x_denominator_map.evaluate(&x)
+    }
+}
+
+/// Point on an elliptic curve
+#[derive(Clone, Copy)]
+struct Point<'a, F> {
+    pub x: F,
+    pub y: F,
+    curve: Option<&'a Curve<F>>,
+}
+
+impl<'a, F: Field> Point<'a, F> {
+    fn new(x: F, y: F, curve: &'a Curve<F>) -> Self {
+        let curve = Some(curve);
+        Self { x, y, curve }
+    }
+}
+
+impl<'a, F: Field> Add for Point<'a, F> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        // Addition law for elliptic curve groups
+        // Source: Elliptic Curves book by LCW
+        if self.is_zero() {
+            rhs
+        } else if rhs.is_zero() {
+            self
+        } else if self.curve != rhs.curve {
+            panic!("points belong to different curves");
+        } else if self.x == rhs.x && (self.y != rhs.y || rhs.y.is_zero()) {
+            Self::zero()
+        } else {
+            let curve = self.curve.unwrap();
+            let x1 = self.x;
+            let y1 = self.y;
+            let x2 = rhs.x;
+            let y2 = rhs.y;
+            if x1 == x2 {
+                // use tangent line
+                let x1x1 = x1 * x1;
+                let m = (x1x1 + x1x1 + x1x1) + curve.a / y1.double();
+                let x3 = m * m - (x1 + x1);
+                let y3 = m * (x1 - x3) - y1;
+                Self::new(x3, y3, curve)
+            } else {
+                // calculate slope through a and b
+                let dx = x2 - x1;
+                let dy = y2 - y1;
+                let m = dy / dx;
+                let x3 = m * m - x2 - x1;
+                let y3 = m * (x1 - x3) - y1;
+                Self::new(x3, y3, curve)
+            }
+        }
+    }
+}
+
+impl<'a, F: Field> Zero for Point<'a, F> {
+    fn zero() -> Self {
+        Self {
+            x: F::zero(),
+            y: F::zero(),
+            curve: None,
+        }
+    }
+
+    fn is_zero(&self) -> bool {
+        self.curve.is_none()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_ff::One;
+    use ark_ff_optimized::fp31::Fp;
+
+    #[test]
+    fn two_torsion_points_are_degree_two() {
+        let curve = Curve::new(Fp::one(), Fp::zero());
+
+        let two_torsion_points = curve.two_torsion_points();
+
+        for p in two_torsion_points {
+            assert!((p + p).is_zero());
+        }
+    }
+
+    #[test]
+    fn two_isogenies_map_to_identity() {
+        let curve = Curve::new(Fp::one(), Fp::zero());
+        let two_torsion_points = curve.two_torsion_points();
+
+        let two_isogenies = curve.two_isogenies();
+
+        for p in two_torsion_points {
+            for isogeny in &two_isogenies {
+                assert_eq!(Fp::zero(), isogeny.x_denominator_map.evaluate(&p.x));
+            }
+        }
+    }
+}
