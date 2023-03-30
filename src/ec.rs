@@ -1,20 +1,25 @@
 use crate::utils::find_roots;
-use ark_ff::Field;
+use ark_ff::PrimeField;
 use ark_ff::Zero;
 use ark_poly::univariate::DensePolynomial;
 use ark_poly::DenseUVPolynomial;
 use ark_poly::Polynomial;
+use num_bigint::BigUint;
+use num_integer::Integer;
 use std::ops::Add;
+use std::ops::AddAssign;
+use std::ops::Mul;
+use std::ops::Neg;
 
 /// Curve of the form y^2 = x^3 + a*x + b
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Curve<F> {
     a: F,
     b: F,
 }
 
-impl<F: Field> Curve<F> {
-    fn new(a: F, b: F) -> Self {
+impl<F: PrimeField> Curve<F> {
+    pub fn new(a: F, b: F) -> Self {
         Self { a, b }
     }
 
@@ -27,6 +32,7 @@ impl<F: Field> Curve<F> {
                 let x0 = point.x;
                 let t = F::from(3u8) * x0 * x0 + self.a;
 
+                // Our domain E(F) and codomain E'(F)
                 let domain = *self;
                 let codomain = Self::new(self.a - F::from(5u8) * t, self.b - F::from(7u8) * x0 * t);
 
@@ -57,21 +63,21 @@ impl<F: Field> Curve<F> {
         let roots = find_roots(&DensePolynomial::from_coefficients_slice(x3_ax_b_coeffs));
         roots
             .into_iter()
-            .map(|root| Point::new(root, F::zero(), self))
+            .map(|root| Point::new(root, F::zero(), *self))
             .collect()
     }
 }
 
-pub struct Isogeny<F: Field> {
-    domain: Curve<F>,
-    codomain: Curve<F>,
+pub struct Isogeny<F: PrimeField> {
+    pub domain: Curve<F>,
+    pub codomain: Curve<F>,
     pub x_numerator_map: DensePolynomial<F>,
     pub x_denominator_map: DensePolynomial<F>,
     pub y_numerator_map: DensePolynomial<F>,
     pub y_denominator_map: DensePolynomial<F>,
 }
 
-impl<F: Field> Isogeny<F> {
+impl<F: PrimeField> Isogeny<F> {
     pub fn new(
         domain: Curve<F>,
         codomain: Curve<F>,
@@ -90,27 +96,27 @@ impl<F: Field> Isogeny<F> {
         }
     }
 
-    pub fn map_x(&self, x: F) -> F {
-        self.x_numerator_map.evaluate(&x) / self.x_denominator_map.evaluate(&x)
+    pub fn map_x(&self, x: &F) -> Option<F> {
+        Some(self.x_numerator_map.evaluate(x) * self.x_denominator_map.evaluate(x).inverse()?)
     }
 }
 
 /// Point on an elliptic curve
-#[derive(Clone, Copy)]
-struct Point<'a, F> {
+#[derive(Clone, Copy, Debug)]
+pub struct Point<F> {
     pub x: F,
     pub y: F,
-    curve: Option<&'a Curve<F>>,
+    pub curve: Option<Curve<F>>,
 }
 
-impl<'a, F: Field> Point<'a, F> {
-    fn new(x: F, y: F, curve: &'a Curve<F>) -> Self {
+impl<F: PrimeField> Point<F> {
+    pub fn new(x: F, y: F, curve: Curve<F>) -> Self {
         let curve = Some(curve);
         Self { x, y, curve }
     }
 }
 
-impl<'a, F: Field> Add for Point<'a, F> {
+impl<F: PrimeField> Add for Point<F> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
@@ -133,7 +139,7 @@ impl<'a, F: Field> Add for Point<'a, F> {
             if x1 == x2 {
                 // use tangent line
                 let x1x1 = x1 * x1;
-                let m = (x1x1 + x1x1 + x1x1) + curve.a / y1.double();
+                let m = ((x1x1 + x1x1 + x1x1) + curve.a) / y1.double();
                 let x3 = m * m - (x1 + x1);
                 let y3 = m * (x1 - x3) - y1;
                 Self::new(x3, y3, curve)
@@ -150,7 +156,49 @@ impl<'a, F: Field> Add for Point<'a, F> {
     }
 }
 
-impl<'a, F: Field> Zero for Point<'a, F> {
+impl<F: PrimeField> AddAssign for Point<F> {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs
+    }
+}
+
+impl<F: PrimeField> Mul<BigUint> for Point<F> {
+    type Output = Self;
+
+    fn mul(self, mut rhs: BigUint) -> Self {
+        let mut res = Self::zero();
+        let mut acc = self;
+        while !rhs.is_zero() {
+            if rhs.is_odd() {
+                res = res + acc;
+            }
+            acc = acc + acc;
+            rhs >>= 1;
+        }
+        res
+    }
+}
+
+impl<F: PrimeField> Neg for Point<F> {
+    type Output = Self;
+
+    fn neg(self) -> Self {
+        Self { y: -self.y, ..self }
+    }
+}
+
+impl<F: PrimeField> PartialEq for Point<F> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.is_zero() && other.is_zero() {
+            true
+        } else {
+            assert_eq!(self.curve, other.curve);
+            self.x == other.x && self.y == other.y
+        }
+    }
+}
+
+impl<F: PrimeField> Zero for Point<F> {
     fn zero() -> Self {
         Self {
             x: F::zero(),
@@ -190,7 +238,7 @@ mod tests {
 
         for p in two_torsion_points {
             for isogeny in &two_isogenies {
-                assert_eq!(Fp::zero(), isogeny.x_denominator_map.evaluate(&p.x));
+                assert!(isogeny.map_x(&p.x).is_none());
             }
         }
     }
