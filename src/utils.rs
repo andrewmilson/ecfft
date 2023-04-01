@@ -172,11 +172,66 @@ fn rand_poly<F: PrimeField, R: Rng>(d: Degree, rng: &mut R) -> DensePolynomial<F
     DensePolynomial::from_coefficients_vec((0..=d).map(|_| F::rand(rng)).collect())
 }
 
+/// Returns all layers of a binary tree.
+/// ```text
+///          a         <- layers[d-1] = [a]
+///         / \
+///        b   c       <- layers[d-2] = [b, c]
+///       / \ / \
+///    ...  ...  ...
+///    / \       / \
+///   w   x ... y   z  <- layers[0] = [w, x, ..., y, z]
+/// ```
+pub fn get_layers_mut<T>(binary_tree: &mut [T]) -> Vec<&mut [T]> {
+    let n = binary_tree.len();
+    assert!(n.is_power_of_two());
+    let depth = n.ilog2();
+    let mut res = Vec::new();
+    (0..depth).rev().fold(binary_tree, |rem, i| {
+        let (lhs, rhs) = rem.split_at_mut(1 << i);
+        res.push(rhs);
+        lhs
+    });
+    res
+}
+
+/// Returns all layers of a binary tree.
+/// ```text
+///          a         <- layers[d-1] = [a]
+///         / \
+///        b   c       <- layers[d-2] = [b, c]
+///       / \ / \
+///    ...  ...  ...
+///    / \       / \
+///   w   x ... y   z  <- layers[0] = [w, x, ..., y, z]
+/// ```
+pub fn get_layers<T>(binary_tree: &[T]) -> Vec<&[T]> {
+    let n = binary_tree.len();
+    assert!(n.is_power_of_two());
+    let depth = n.ilog2();
+    let mut res = Vec::new();
+    (0..depth).rev().fold(binary_tree, |rem, i| {
+        let (lhs, rhs) = rem.split_at(1 << i);
+        res.push(rhs);
+        lhs
+    });
+    res
+}
+
+#[derive(Clone, Debug)]
 pub struct BinaryTree<T>(Vec<T>);
 
 impl<T> BinaryTree<T> {
     pub fn depth(&self) -> u32 {
-        self.0.len().ilog2()
+        if self.0.is_empty() {
+            0
+        } else {
+            self.0.len().ilog2()
+        }
+    }
+
+    pub fn leaves(&self) -> &[T] {
+        &self.0[self.0.len() / 2..]
     }
 
     pub fn get_layer_with_size(&self, n: usize) -> &[T] {
@@ -195,10 +250,8 @@ impl<T> BinaryTree<T> {
     ///   w   x ... y   z  <- layers[0] = [w, x, ..., y, z]
     /// ```
     pub fn get_layers_mut(&mut self) -> Vec<&mut [T]> {
-        let n = self.0.len();
-        let depth = n.ilog2();
         let mut res = Vec::new();
-        (0..depth).rev().fold(&mut *self.0, |rem, i| {
+        (0..self.depth()).rev().fold(&mut *self.0, |rem, i| {
             let (lhs, rhs) = rem.split_at_mut(1 << i);
             res.push(rhs);
             lhs
@@ -229,7 +282,8 @@ impl<T> BinaryTree<T> {
 
 impl<T> From<Vec<T>> for BinaryTree<T> {
     fn from(tree: Vec<T>) -> Self {
-        assert!(tree.len().is_power_of_two());
+        let n = tree.len();
+        assert!(n.is_power_of_two() || n == 0);
         Self(tree)
     }
 }
@@ -247,6 +301,43 @@ impl<T> DerefMut for BinaryTree<T> {
         &mut self.0
     }
 }
+
+// #[derive(Clone, Copy, Default, Debug)]
+// pub struct Mat2x2<F>(pub [[F; 2]; 2]);
+
+// impl<F: PrimeField> Mat2x2<F> {
+//     pub fn identity() -> Mat2x2<F> {
+//         Self([[F::one(), F::zero()], [F::zero(), F::one()]])
+//     }
+
+//     pub fn inverse(&self) -> Option<Self> {
+//         let det_inv = self.determinant().inverse();
+//         if det_inv.is_none() {
+//             println!("{:?}", self);
+//             return None;
+//         }
+//         let det_inv = det_inv.unwrap();
+//         Some(Self([
+//             [self.0[1][1] * det_inv, -self.0[0][1] * det_inv],
+//             [-self.0[1][0] * det_inv, self.0[0][0] * det_inv],
+//         ]))
+//     }
+
+//     pub fn determinant(&self) -> F {
+//         self.0[0][0] * self.0[1][1] - self.0[0][1] * self.0[1][0]
+//     }
+// }
+
+// impl<F: PrimeField> Mul<&[F; 2]> for &Mat2x2<F> {
+//     type Output = [F; 2];
+
+//     fn mul(self, rhs: &[F; 2]) -> Self::Output {
+//         [
+//             self.0[0][0] * rhs[0] + self.0[0][1] * rhs[1],
+//             self.0[1][0] * rhs[0] + self.0[1][1] * rhs[1],
+//         ]
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

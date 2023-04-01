@@ -2,7 +2,6 @@ use crate::ec::Isogeny;
 use crate::ec::Point;
 use crate::utils::get_layers;
 use crate::utils::get_layers_mut;
-use crate::utils::BinaryTree;
 use ark_ff::PrimeField;
 use ark_ff::Zero;
 use ark_poly::Polynomial;
@@ -29,12 +28,12 @@ impl<F: PrimeField> FFForrest<F> {
     pub fn new(coset_offset: Point<F>, generator: Point<F>) -> Self {
         assert_ne!(coset_offset, generator);
         assert_eq!(coset_offset.curve, generator.curve);
-        let two_adicity = two_adicity(generator).expect("generator must have order 2^k");
-        assert!(two_adicity < 32, "generator has unsupported two adicity");
-        let n = 1 << two_adicity;
+        let log_n = two_adicity(generator).expect("generator must have order 2^k");
+        assert!(log_n < 32, "generator has unsupported two adicity");
+        let n = 1 << log_n;
 
         // generate leaf vertices
-        let mut vertices = BinaryTree::from(vec![F::zero(); 2 * n]);
+        let mut vertices = vec![F::zero(); 2 * n];
         let mut acc = Point::zero();
         for vertex in &mut vertices[n..] {
             *vertex = (coset_offset + acc).x;
@@ -45,8 +44,10 @@ impl<F: PrimeField> FFForrest<F> {
         let mut vertex_layers = get_layers_mut(&mut vertices);
         let mut prev_layer_domain = generator.curve.unwrap();
         let mut isogenies = Vec::new();
+        let mut g = generator;
         // TODO: use array_windows_mut
         for i in 1..vertex_layers.len() {
+            println!("KKLLKLKLKLKLKLKLK{i}");
             let (prev_layers, layers) = vertex_layers.split_at_mut(i);
             let prev_layer = prev_layers.last_mut().unwrap();
             let layer = layers.first_mut().unwrap();
@@ -55,6 +56,13 @@ impl<F: PrimeField> FFForrest<F> {
                 .two_isogenies()
                 .into_iter()
                 .find_map(|isogeny| {
+                    // let new_two = two_adicity(isogeny.map(&g));
+                    // println!("NT: {:?} {}", new_two, layer.len().ilog2());
+                    // if new_two.unwrap() == layer.len().ilog2() {
+                    //     println!("TWO ADDICITY: {:?}", new_two);
+                    //     g = isogeny.map(&g);
+                    // }
+
                     for (i, dst) in layer.iter_mut().enumerate() {
                         let prev_lhs = prev_layer[i];
                         let prev_rhs = prev_layer[i + layer_size];
@@ -65,6 +73,7 @@ impl<F: PrimeField> FFForrest<F> {
                         }
                         *dst = lhs_mapped;
                     }
+
                     Some(isogeny)
                 })
                 .expect("cannot find a suitable isogeny");
@@ -184,10 +193,11 @@ impl<F: PrimeField> FFForrest<F> {
 
             let layer_id = self.num_layers() - 1 - n.ilog2() as usize;
             let l = get_layers(&self.vertices)[layer_id];
+
             l.array_chunks()
                 .enumerate()
                 // .take(n / 2)
-                .flat_map(|(i, [s0, _, s1, _])| {
+                .flat_map(|(i, [s0, s1])| {
                     [
                         u0[i] + s0.pow([(n / 2) as u64]) * v0[i],
                         u1[i] + s1.pow([(n / 2) as u64]) * v1[i],

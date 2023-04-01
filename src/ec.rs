@@ -69,6 +69,7 @@ impl<F: PrimeField> Curve<F> {
 }
 
 // Defines an isogeny between curves
+#[derive(Clone, Debug)]
 pub struct Isogeny<F: PrimeField> {
     pub domain: Curve<F>,
     pub codomain: Curve<F>,
@@ -99,6 +100,24 @@ impl<F: PrimeField> Isogeny<F> {
 
     pub fn map_x(&self, x: &F) -> Option<F> {
         Some(self.x_numerator_map.evaluate(x) * self.x_denominator_map.evaluate(x).inverse()?)
+    }
+
+    pub fn map_y(&self, x: &F, y: &F) -> Option<F> {
+        Some(self.y_numerator_map.evaluate(x) * self.y_denominator_map.evaluate(x).inverse()? * y)
+    }
+
+    pub fn map(&self, p: &Point<F>) -> Point<F> {
+        if p.is_zero() {
+            Point::zero()
+        } else {
+            assert_eq!(self.domain, p.curve.unwrap());
+            let x_prime = self.map_x(&p.x);
+            let y_prime = self.map_y(&p.x, &p.y);
+            match (x_prime, y_prime) {
+                (Some(x), Some(y)) => Point::new(x, y, self.codomain),
+                _ => Point::zero(),
+            }
+        }
     }
 }
 
