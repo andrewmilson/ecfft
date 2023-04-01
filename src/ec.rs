@@ -190,9 +190,9 @@ impl<F: PrimeField> Mul<BigUint> for Point<F> {
         let mut acc = self;
         while !rhs.is_zero() {
             if rhs.is_odd() {
-                res = res + acc;
+                res += acc;
             }
-            acc = acc + acc;
+            acc += acc;
             rhs >>= 1;
         }
         res
@@ -239,7 +239,7 @@ mod tests {
     use ark_ff_optimized::fp31::Fp;
 
     #[test]
-    fn two_torsion_points_are_degree_two() {
+    fn two_torsion_points_have_order_two() {
         let curve = Curve::new(Fp::one(), Fp::zero());
 
         let two_torsion_points = curve.two_torsion_points();

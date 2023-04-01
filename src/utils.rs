@@ -10,6 +10,7 @@ use rand::Rng;
 use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::ops::DerefMut;
+use std::ops::Mul;
 
 type Degree = usize;
 
@@ -234,6 +235,10 @@ impl<T> BinaryTree<T> {
         &self.0[self.0.len() / 2..]
     }
 
+    pub fn num_layers(&self) -> u32 {
+        self.0.len().ilog2()
+    }
+
     pub fn get_layer_with_size(&self, n: usize) -> &[T] {
         assert!(n.is_power_of_two());
         &self.0[n..n + n]
@@ -302,42 +307,42 @@ impl<T> DerefMut for BinaryTree<T> {
     }
 }
 
-// #[derive(Clone, Copy, Default, Debug)]
-// pub struct Mat2x2<F>(pub [[F; 2]; 2]);
+#[derive(Clone, Copy, Default, Debug)]
+pub struct Mat2x2<F>(pub [[F; 2]; 2]);
 
-// impl<F: PrimeField> Mat2x2<F> {
-//     pub fn identity() -> Mat2x2<F> {
-//         Self([[F::one(), F::zero()], [F::zero(), F::one()]])
-//     }
+impl<F: PrimeField> Mat2x2<F> {
+    pub fn identity() -> Mat2x2<F> {
+        Self([[F::one(), F::zero()], [F::zero(), F::one()]])
+    }
 
-//     pub fn inverse(&self) -> Option<Self> {
-//         let det_inv = self.determinant().inverse();
-//         if det_inv.is_none() {
-//             println!("{:?}", self);
-//             return None;
-//         }
-//         let det_inv = det_inv.unwrap();
-//         Some(Self([
-//             [self.0[1][1] * det_inv, -self.0[0][1] * det_inv],
-//             [-self.0[1][0] * det_inv, self.0[0][0] * det_inv],
-//         ]))
-//     }
+    pub fn inverse(&self) -> Option<Self> {
+        let det_inv = self.determinant().inverse();
+        if det_inv.is_none() {
+            println!("{:?}", self);
+            return None;
+        }
+        let det_inv = det_inv.unwrap();
+        Some(Self([
+            [self.0[1][1] * det_inv, -self.0[0][1] * det_inv],
+            [-self.0[1][0] * det_inv, self.0[0][0] * det_inv],
+        ]))
+    }
 
-//     pub fn determinant(&self) -> F {
-//         self.0[0][0] * self.0[1][1] - self.0[0][1] * self.0[1][0]
-//     }
-// }
+    pub fn determinant(&self) -> F {
+        self.0[0][0] * self.0[1][1] - self.0[0][1] * self.0[1][0]
+    }
+}
 
-// impl<F: PrimeField> Mul<&[F; 2]> for &Mat2x2<F> {
-//     type Output = [F; 2];
+impl<F: PrimeField> Mul<&[F; 2]> for &Mat2x2<F> {
+    type Output = [F; 2];
 
-//     fn mul(self, rhs: &[F; 2]) -> Self::Output {
-//         [
-//             self.0[0][0] * rhs[0] + self.0[0][1] * rhs[1],
-//             self.0[1][0] * rhs[0] + self.0[1][1] * rhs[1],
-//         ]
-//     }
-// }
+    fn mul(self, rhs: &[F; 2]) -> Self::Output {
+        [
+            self.0[0][0] * rhs[0] + self.0[0][1] * rhs[1],
+            self.0[1][0] * rhs[0] + self.0[1][1] * rhs[1],
+        ]
+    }
+}
 
 #[cfg(test)]
 mod tests {

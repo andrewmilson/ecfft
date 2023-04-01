@@ -2,7 +2,6 @@
 
 pub mod ec;
 pub mod ecfft;
-pub mod ffforrest;
 mod utils;
 
 #[cfg(test)]
@@ -10,7 +9,6 @@ mod tests {
     use crate::ec::Curve;
     use crate::ec::Point;
     use crate::ecfft::FFTree;
-    use crate::ffforrest::FFForrest;
     use ark_ff::One;
     use ark_ff::Zero;
     use ark_ff_optimized::fp31::Fp;
@@ -27,9 +25,27 @@ mod tests {
         let primitive_point = Point::new(Fp::from(1048755163u32), Fp::from(279503108u32), curve);
         let generator = primitive_point * (cardinality / n);
         let fftree = FFTree::new(primitive_point, generator);
-        // let fftree = FFForrest::new(primitive_point, generator);
 
-        println!("FFTree: {:?}", fftree);
+        let one = Fp::one();
+        let two = one + one;
+        let poly = DensePolynomial::from_coefficients_vec(vec![one, two, one, two]);
+        let mut ys = Vec::new();
+        for x in fftree.f.leaves() {
+            ys.push(poly.evaluate(x))
+        }
+
+        println!("YS: {:?}", ys);
+        let original_ys = ys.iter().copied().step_by(2).collect::<Vec<Fp>>();
+        println!("original: {:?}", original_ys);
+        let expected_ys = ys.iter().copied().skip(1).step_by(2).collect::<Vec<Fp>>();
+        let actual_ys = fftree.extend(&original_ys);
+        println!("YOOYOYO: {:?}", actual_ys);
+
+        println!("ENTER: {:?}", fftree.enter(&poly));
+
+        // // let fftree = FFForrest::new(primitive_point, generator);
+
+        // println!("FFTree: {:?}", fftree);
 
         // let one = Fp::one();
         // let two = one + one;
@@ -62,8 +78,7 @@ mod tests {
         // let one = Fp::one();
         // let two = one + one;
         // let poly = DensePolynomial::from_coefficients_vec(vec![one, two, one,
-        // two]); // two, two
-        // let layer = ffforrest.get_layer(0);
+        // two]); // two, two let layer = ffforrest.get_layer(0);
         // // let mut ys = Vec::new();
         // // for [x, _] in layer.l.array_chunks() {
         // //     ys.push(poly.evaluate(x));
@@ -80,7 +95,7 @@ mod tests {
         //     println!("SHOT: {}", poly.evaluate(x));
         // }
 
-        // // let actual = ffforrest.extend(&ys);
+        // let actual = ffforrest.extend(&ys);
 
         // // let mut expected = Vec::new();
         // // for [_, x] in layer.l.array_chunks() {

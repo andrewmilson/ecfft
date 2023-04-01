@@ -1,7 +1,7 @@
 use crate::ec::Isogeny;
 use crate::ec::Point;
-use crate::ffforrest::Mat2x2;
 use crate::utils::BinaryTree;
+use crate::utils::Mat2x2;
 // use crate::utils::BinaryTree;
 // use crate::utils::Mat2x2;
 use ark_ff::PrimeField;
@@ -9,9 +9,16 @@ use ark_ff::Zero;
 use ark_poly::Polynomial;
 use std::iter::zip;
 
+pub struct FFTreeLayer<'a, F: PrimeField> {
+    pub l: &'a [F],
+    pub decomp_matrices: &'a [Mat2x2<F>],
+    pub recomp_matrices: &'a [Mat2x2<F>],
+    pub isogeny: &'a Isogeny<F>,
+}
+
 #[derive(Clone, Debug)]
 pub struct FFTree<F: PrimeField> {
-    f: BinaryTree<F>,
+    pub f: BinaryTree<F>,
     recomp_matrices: BinaryTree<Mat2x2<F>>,
     decomp_matrices: BinaryTree<Mat2x2<F>>,
     isogenies: Vec<Isogeny<F>>,
@@ -78,8 +85,93 @@ impl<F: PrimeField> FFTree<F> {
         Self::from_tree(f, isogenies)
     }
 
+    fn extend_impl(&self, evals: &[F]) -> Vec<F> {
+        let n = evals.len();
+        if n == 1 {
+            return evals.to_vec();
+        }
+
+        let i = self.f.num_layers() - 2 - n.ilog2();
+        let layer = self.get_layer(i as usize);
+
+        // π_0 and π_1
+        let (evals0, evals1): (Vec<F>, Vec<F>) = layer
+            .recomp_matrices
+            .iter()
+            .enumerate()
+            .map(|(i, m)| {
+                let res = m * &[evals[i], evals[i + n / 2]];
+                (res[0], res[1])
+            })
+            .unzip();
+
+        // π_0' and π_1'
+        let evals0_prime = self.extend_impl(&evals0);
+        let evals1_prime = self.extend_impl(&evals1);
+
+        let (lhs, rhs): (Vec<F>, Vec<F>) = layer
+            .decomp_matrices
+            .iter()
+            .enumerate()
+            .map(|(i, m)| {
+                let res = m * &[evals0_prime[i], evals1_prime[i]];
+                (res[0], res[1])
+            })
+            .unzip();
+
+        [lhs, rhs].concat()
+    }
+
+    pub fn extend(&self, evals: &[F]) -> Vec<F> {
+        // TODO: power of two check
+        match usize::cmp(&(evals.len() * 2), &self.f.leaves().len()) {
+            std::cmp::Ordering::Less => self.subtree.as_ref().unwrap().extend(evals),
+            std::cmp::Ordering::Equal => self.extend_impl(evals),
+            std::cmp::Ordering::Greater => panic!("FFTree is too small"),
+        }
+    }
+
+    pub fn enter_impl(&self, coeffs: &[F]) -> Vec<F> {
+        let n = coeffs.len();
+        if n == 1 {
+            return coeffs.to_vec();
+        }
+
+        let subtree = self.subtree.as_ref().unwrap();
+        let u0 = subtree.enter(&coeffs[0..n / 2]);
+        let v0 = subtree.enter(&coeffs[n / 2..]);
+        let u1 = self.extend(&u0);
+        let v1 = self.extend(&v0);
+
+        let i = self.f.num_layers() - 1 - n.ilog2();
+        let l = self.f.get_layers()[i as usize];
+
+        println!("HMM: {i} {:?}", l);
+
+        l.array_chunks()
+            .enumerate()
+            .flat_map(|(i, [s0, s1])| {
+                [
+                    u0[i] + s0.pow([(n / 2) as u64]) * v0[i],
+                    u1[i] + s1.pow([(n / 2) as u64]) * v1[i],
+                ]
+            })
+            .collect()
+
+        // [lhs, rhs].concat()
+    }
+
+    pub fn enter(&self, coeffs: &[F]) -> Vec<F> {
+        // TODO: power of two check
+        match usize::cmp(&coeffs.len(), &self.f.leaves().len()) {
+            std::cmp::Ordering::Less => self.subtree.as_ref().unwrap().enter(coeffs),
+            std::cmp::Ordering::Equal => self.enter_impl(coeffs),
+            std::cmp::Ordering::Greater => panic!("FFTree is too small"),
+        }
+    }
+
     fn from_tree(f: BinaryTree<F>, isogenies: Vec<Isogeny<F>>) -> Self {
-        let mut f_layers = f.get_layers();
+        let f_layers = f.get_layers();
         let n = f.leaves().len();
 
         // Generate polynomial decomposition matrices
@@ -143,44 +235,19 @@ impl<F: PrimeField> FFTree<F> {
         Some(Self::from_tree(f_prime, isogenies.clone()))
     }
 
-    // pub fn extend(&self, evals: &[F]) -> Vec<F> {
-    //     // if self.f.leaves().len()
-
-    //     if evals.len() == 1 {
-    //         return evals.to_vec();
-    //     }
-
-    //     let n = evals.len();
-    //     let layer_id = self.num_layers() - 1 - n.ilog2() as usize;
-    //     let layer = self.get_layer(layer_id);
-
-    //     // π_0 and π_1
-    //     let (evals0, evals1): (Vec<F>, Vec<F>) = layer
-    //         .recomp_matrices
-    //         .iter()
-    //         .enumerate()
-    //         .map(|(i, m)| {
-    //             let res = m * &[evals[i], evals[i + n / 2]];
-    //             (res[0], res[1])
-    //         })
-    //         .unzip();
-
-    //     let evals0_prime = self.extend(&evals0);
-    //     let evals1_prime = self.extend(&evals1);
-
-    //     // π_0' and π_1'
-    //     let (lhs, rhs): (Vec<F>, Vec<F>) = layer
-    //         .decomp_matrices
-    //         .iter()
-    //         .enumerate()
-    //         .map(|(i, m)| {
-    //             let res = m * &[evals0_prime[i], evals1_prime[i]];
-    //             (res[0], res[1])
-    //         })
-    //         .unzip();
-
-    //     [lhs, rhs].concat()
-    // }
+    fn get_layer(&self, i: usize) -> FFTreeLayer<'_, F> {
+        let isogeny = &self.isogenies[i];
+        // TODO: implement get_layer method
+        let decomp_matrices = self.decomp_matrices.get_layers()[i];
+        let recomp_matrices = self.recomp_matrices.get_layers()[i];
+        let l = self.f.get_layers()[i];
+        FFTreeLayer {
+            l,
+            decomp_matrices,
+            recomp_matrices,
+            isogeny,
+        }
+    }
 }
 
 /// Returns the two adicity of a point i.e. returns `n` such that 2^n * p = 0.
