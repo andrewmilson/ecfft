@@ -8,6 +8,8 @@ use num_bigint::BigUint;
 use num_integer::Integer;
 use rand::Rng;
 use std::collections::BTreeMap;
+use std::ops::Deref;
+use std::ops::DerefMut;
 
 type Degree = usize;
 
@@ -168,6 +170,82 @@ fn derivative<F: PrimeField>(f: &DensePolynomial<F>) -> DensePolynomial<F> {
 
 fn rand_poly<F: PrimeField, R: Rng>(d: Degree, rng: &mut R) -> DensePolynomial<F> {
     DensePolynomial::from_coefficients_vec((0..=d).map(|_| F::rand(rng)).collect())
+}
+
+pub struct BinaryTree<T>(Vec<T>);
+
+impl<T> BinaryTree<T> {
+    pub fn depth(&self) -> u32 {
+        self.0.len().ilog2()
+    }
+
+    pub fn get_layer_with_size(&self, n: usize) -> &[T] {
+        assert!(n.is_power_of_two());
+        &self.0[n..n + n]
+    }
+
+    /// Returns all layers of a binary tree.
+    /// ```text
+    ///          a         <- layers[d-1] = [a]
+    ///         / \
+    ///        b   c       <- layers[d-2] = [b, c]
+    ///       / \ / \
+    ///    ...  ...  ...
+    ///    / \       / \
+    ///   w   x ... y   z  <- layers[0] = [w, x, ..., y, z]
+    /// ```
+    pub fn get_layers_mut(&mut self) -> Vec<&mut [T]> {
+        let n = self.0.len();
+        let depth = n.ilog2();
+        let mut res = Vec::new();
+        (0..depth).rev().fold(&mut *self.0, |rem, i| {
+            let (lhs, rhs) = rem.split_at_mut(1 << i);
+            res.push(rhs);
+            lhs
+        });
+        res
+    }
+
+    /// Returns all layers of a binary tree.
+    /// ```text
+    ///          a         <- layers[d-1] = [a]
+    ///         / \
+    ///        b   c       <- layers[d-2] = [b, c]
+    ///       / \ / \
+    ///    ...  ...  ...
+    ///    / \       / \
+    ///   w   x ... y   z  <- layers[0] = [w, x, ..., y, z]
+    /// ```
+    pub fn get_layers(&self) -> Vec<&[T]> {
+        let mut res = Vec::new();
+        (0..self.depth()).rev().fold(&*self.0, |rem, i| {
+            let (lhs, rhs) = rem.split_at(1 << i);
+            res.push(rhs);
+            lhs
+        });
+        res
+    }
+}
+
+impl<T> From<Vec<T>> for BinaryTree<T> {
+    fn from(tree: Vec<T>) -> Self {
+        assert!(tree.len().is_power_of_two());
+        Self(tree)
+    }
+}
+
+impl<T> Deref for BinaryTree<T> {
+    type Target = <Vec<T> as Deref>::Target;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for BinaryTree<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }
 
 #[cfg(test)]

@@ -59,8 +59,8 @@ impl<F: PrimeField> Curve<F> {
         // The two torsion points have a vertical tangent since 2*P = 0.
         // The points with vertical tangent are those with y = 0.
         // We can find the points if we find the values of x satisfy 0 = x^3 + a*x + b.
-        let x3_ax_b_coeffs = &[self.b, self.a, F::zero(), F::one()];
-        let roots = find_roots(&DensePolynomial::from_coefficients_slice(x3_ax_b_coeffs));
+        let x3_ax_b = &[self.b, self.a, F::zero(), F::one()];
+        let roots = find_roots(&DensePolynomial::from_coefficients_slice(x3_ax_b));
         roots
             .into_iter()
             .map(|root| Point::new(root, F::zero(), *self))
@@ -68,6 +68,7 @@ impl<F: PrimeField> Curve<F> {
     }
 }
 
+// Defines an isogeny between curves
 pub struct Isogeny<F: PrimeField> {
     pub domain: Curve<F>,
     pub codomain: Curve<F>,
@@ -225,6 +226,7 @@ mod tests {
         let two_torsion_points = curve.two_torsion_points();
 
         for p in two_torsion_points {
+            assert!(!p.is_zero());
             assert!((p + p).is_zero());
         }
     }
