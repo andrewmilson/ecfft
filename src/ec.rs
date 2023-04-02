@@ -14,8 +14,8 @@ use std::ops::Neg;
 /// Curve of the form y^2 = x^3 + a*x + b
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Curve<F> {
-    a: F,
-    b: F,
+    pub a: F,
+    pub b: F,
 }
 
 impl<F: PrimeField> Curve<F> {
@@ -59,8 +59,9 @@ impl<F: PrimeField> Curve<F> {
         // The two torsion points have a vertical tangent since 2*P = 0.
         // The points with vertical tangent are those with y = 0.
         // We can find the points if we find the values of x satisfy 0 = x^3 + a*x + b.
-        let x3_ax_b = &[self.b, self.a, F::zero(), F::one()];
-        let roots = find_roots(&DensePolynomial::from_coefficients_slice(x3_ax_b));
+        let Self { a, b } = *self;
+        let x3_ax_b = DensePolynomial::from_coefficients_vec(vec![b, a, F::zero(), F::one()]);
+        let roots = find_roots(&x3_ax_b);
         roots
             .into_iter()
             .map(|root| Point::new(root, F::zero(), *self))

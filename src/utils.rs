@@ -18,18 +18,22 @@ type Degree = usize;
 pub fn find_roots<F: PrimeField>(poly: &DensePolynomial<F>) -> Vec<F> {
     let f = square_free_factors(poly);
     let ddf = distinct_degree_factors(&f);
-    let degree_1_factors = equal_degree_factorization(ddf.get(&1).unwrap(), 1);
-    let mut roots: Vec<F> = degree_1_factors
-        .into_iter()
-        .map(|factor| {
-            // factor = x + c
-            // root = -c
-            assert_eq!(1, factor.degree());
-            -factor[0]
-        })
-        .collect();
-    roots.sort();
-    roots
+    if let Some(d1) = ddf.get(&1) {
+        let degree_1_factors = equal_degree_factorization(d1, 1);
+        let mut roots: Vec<F> = degree_1_factors
+            .into_iter()
+            .map(|factor| {
+                // factor = x + c
+                // root = -c
+                assert_eq!(1, factor.degree());
+                -factor[0]
+            })
+            .collect();
+        roots.sort();
+        roots
+    } else {
+        Vec::new()
+    }
 }
 
 /// Returns a mapping of degrees d to the factors of the polynomial, f,
@@ -38,7 +42,7 @@ pub fn find_roots<F: PrimeField>(poly: &DensePolynomial<F>) -> Vec<F> {
 ///
 /// The input must be a squarefree polynomial.
 /// https://en.wikipedia.org/wiki/Factorization_of_polynomials_over_finite_fields
-fn distinct_degree_factors<F: PrimeField>(
+pub(crate) fn distinct_degree_factors<F: PrimeField>(
     f: &DensePolynomial<F>,
 ) -> BTreeMap<Degree, DensePolynomial<F>> {
     let x = DensePolynomial::from_coefficients_slice(&[F::zero(), F::one()]);
@@ -104,7 +108,7 @@ fn equal_degree_factorization<F: PrimeField>(
 /// Returns the polynomial's square free factorization.
 /// https://mathrefresher.blogspot.com/2009/01/greatest-common-divisor-of-polynomial.html
 /// https://en.wikipedia.org/wiki/Factorization_of_polynomials_over_finite_fields
-fn square_free_factors<F: PrimeField>(f: &DensePolynomial<F>) -> DensePolynomial<F> {
+pub(crate) fn square_free_factors<F: PrimeField>(f: &DensePolynomial<F>) -> DensePolynomial<F> {
     let f_prime = derivative(f);
     if f_prime.is_zero() {
         // f is already square free
@@ -140,7 +144,7 @@ fn div_remainder<F: PrimeField>(
 }
 
 /// Calculates (a^exp) % modulus
-fn pow_mod<F: PrimeField>(
+pub(crate) fn pow_mod<F: PrimeField>(
     a: &DensePolynomial<F>,
     mut exp: BigUint,
     modulus: &DensePolynomial<F>,
@@ -173,52 +177,6 @@ fn rand_poly<F: PrimeField, R: Rng>(d: Degree, rng: &mut R) -> DensePolynomial<F
     DensePolynomial::from_coefficients_vec((0..=d).map(|_| F::rand(rng)).collect())
 }
 
-/// Returns all layers of a binary tree.
-/// ```text
-///          a         <- layers[d-1] = [a]
-///         / \
-///        b   c       <- layers[d-2] = [b, c]
-///       / \ / \
-///    ...  ...  ...
-///    / \       / \
-///   w   x ... y   z  <- layers[0] = [w, x, ..., y, z]
-/// ```
-pub fn get_layers_mut<T>(binary_tree: &mut [T]) -> Vec<&mut [T]> {
-    let n = binary_tree.len();
-    assert!(n.is_power_of_two());
-    let depth = n.ilog2();
-    let mut res = Vec::new();
-    (0..depth).rev().fold(binary_tree, |rem, i| {
-        let (lhs, rhs) = rem.split_at_mut(1 << i);
-        res.push(rhs);
-        lhs
-    });
-    res
-}
-
-/// Returns all layers of a binary tree.
-/// ```text
-///          a         <- layers[d-1] = [a]
-///         / \
-///        b   c       <- layers[d-2] = [b, c]
-///       / \ / \
-///    ...  ...  ...
-///    / \       / \
-///   w   x ... y   z  <- layers[0] = [w, x, ..., y, z]
-/// ```
-pub fn get_layers<T>(binary_tree: &[T]) -> Vec<&[T]> {
-    let n = binary_tree.len();
-    assert!(n.is_power_of_two());
-    let depth = n.ilog2();
-    let mut res = Vec::new();
-    (0..depth).rev().fold(binary_tree, |rem, i| {
-        let (lhs, rhs) = rem.split_at(1 << i);
-        res.push(rhs);
-        lhs
-    });
-    res
-}
-
 #[derive(Clone, Debug)]
 pub struct BinaryTree<T>(Vec<T>);
 
@@ -239,9 +197,10 @@ impl<T> BinaryTree<T> {
         self.0.len().ilog2()
     }
 
-    pub fn get_layer_with_size(&self, n: usize) -> &[T] {
-        assert!(n.is_power_of_two());
-        &self.0[n..n + n]
+    pub fn get_layer(&self, i: usize) -> &[T] {
+        let num_leaves = self.0.len() / 2;
+        let layer_size = num_leaves >> i;
+        &self.0[layer_size..layer_size * 2]
     }
 
     /// Returns all layers of a binary tree.
@@ -316,12 +275,7 @@ impl<F: PrimeField> Mat2x2<F> {
     }
 
     pub fn inverse(&self) -> Option<Self> {
-        let det_inv = self.determinant().inverse();
-        if det_inv.is_none() {
-            println!("{:?}", self);
-            return None;
-        }
-        let det_inv = det_inv.unwrap();
+        let det_inv = self.determinant().inverse()?;
         Some(Self([
             [self.0[1][1] * det_inv, -self.0[0][1] * det_inv],
             [-self.0[1][0] * det_inv, self.0[0][0] * det_inv],

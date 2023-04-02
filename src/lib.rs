@@ -2,6 +2,7 @@
 
 pub mod ec;
 pub mod ecfft;
+pub mod schoofs;
 mod utils;
 
 #[cfg(test)]
@@ -16,11 +17,12 @@ mod tests {
     use ark_poly::DenseUVPolynomial;
     use ark_poly::Polynomial;
     use num_bigint::BigUint;
+    use std::time::Instant;
 
     #[test]
     fn it_works() {
         let curve = Curve::new(Fp::one(), Fp::zero());
-        let n = 1u32 << 3;
+        let n = 1u32 << 17;
         let cardinality = BigUint::from(1u32 << 31);
         let primitive_point = Point::new(Fp::from(1048755163u32), Fp::from(279503108u32), curve);
         let generator = primitive_point * (cardinality / n);
@@ -28,20 +30,25 @@ mod tests {
 
         let one = Fp::one();
         let two = one + one;
-        let poly = DensePolynomial::from_coefficients_vec(vec![one, two, one, two]);
-        let mut ys = Vec::new();
-        for x in fftree.f.leaves() {
-            ys.push(poly.evaluate(x))
-        }
+        // let poly = DensePolynomial::from_coefficients_vec(vec![one, two, one, two]);
 
-        println!("YS: {:?}", ys);
-        let original_ys = ys.iter().copied().step_by(2).collect::<Vec<Fp>>();
-        println!("original: {:?}", original_ys);
-        let expected_ys = ys.iter().copied().skip(1).step_by(2).collect::<Vec<Fp>>();
-        let actual_ys = fftree.extend(&original_ys);
-        println!("YOOYOYO: {:?}", actual_ys);
+        let poly = DensePolynomial::from_coefficients_vec((0..n / 2).map(|_| one).collect());
+        // let mut ys = Vec::new();
+        // let now = Instant::now();
+        // for x in fftree.f.leaves() {
+        //     ys.push(poly.evaluate(x))
+        // }
+        // // println!("YS: {:?}", ys);
+        // println!("Naive: {:?}", now.elapsed());
+        let now = Instant::now();
+        let actual = fftree.enter(&poly);
+        // println!("YS: {:?}", actual);
+        println!("Optimized: {:?}", now.elapsed());
+        let now = Instant::now();
+        let extended = fftree.extend(&actual);
+        println!("extend time: {:?}", now.elapsed());
 
-        println!("ENTER: {:?}", fftree.enter(&poly));
+        // println!("ENTER: {:?}", );
 
         // // let fftree = FFForrest::new(primitive_point, generator);
 
