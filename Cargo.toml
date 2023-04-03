@@ -1,5 +1,10 @@
 [package]
 name = "ecfft"
+description = "Elliptic curve fast fourier transform for all prime fields"
+repository = "https://github.com/andrewmilson/ecfft"
+authors = ["Andrew Milson <andrew.j.milson@gmail.com>"]
+keywords = ["cryptography", "finite-fields", "elliptic-curves", "fft"]
+categories = ["cryptography"]
 version = "0.1.0"
 edition = "2021"
 

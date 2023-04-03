@@ -2,23 +2,21 @@ use crate::ec::Isogeny;
 use crate::ec::Point;
 use crate::utils::BinaryTree;
 use crate::utils::Mat2x2;
-// use crate::utils::BinaryTree;
-// use crate::utils::Mat2x2;
 use ark_ff::PrimeField;
 use ark_ff::Zero;
 use ark_poly::Polynomial;
 use std::iter::zip;
 
-pub enum Moiety {
-    S0,
-    S1,
-}
+// pub enum Moiety {
+//     S0,
+//     S1,
+// }
 
-pub struct FFTreeLayer<'a, F: PrimeField> {
-    pub l: &'a [F],
+struct FFTreeLayer<'a, F: PrimeField> {
+    pub _l: &'a [F],
+    pub _isogeny: &'a Isogeny<F>,
     pub decomp_matrices: &'a [Mat2x2<F>],
     pub recomp_matrices: &'a [Mat2x2<F>],
-    pub isogeny: &'a Isogeny<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -123,7 +121,7 @@ impl<F: PrimeField> FFTree<F> {
     pub fn extend(&self, evals: &[F]) -> Vec<F> {
         assert!(evals.len().is_power_of_two());
         match usize::cmp(&(evals.len() * 2), &self.f.leaves().len()) {
-            std::cmp::Ordering::Less => self.subtree.as_ref().unwrap().extend(evals),
+            std::cmp::Ordering::Less => self.subtree().unwrap().extend(evals),
             std::cmp::Ordering::Equal => self.extend_impl(evals),
             std::cmp::Ordering::Greater => panic!("FFTree is too small"),
         }
@@ -135,7 +133,7 @@ impl<F: PrimeField> FFTree<F> {
             return coeffs.to_vec();
         }
 
-        let subtree = self.subtree.as_ref().unwrap();
+        let subtree = self.subtree().unwrap();
         let u0 = subtree.enter(&coeffs[0..n / 2]);
         let v0 = subtree.enter(&coeffs[n / 2..]);
         let u1 = self.extend(&u0);
@@ -158,7 +156,7 @@ impl<F: PrimeField> FFTree<F> {
     pub fn enter(&self, coeffs: &[F]) -> Vec<F> {
         assert!(coeffs.len().is_power_of_two());
         match usize::cmp(&coeffs.len(), &self.f.leaves().len()) {
-            std::cmp::Ordering::Less => self.subtree.as_ref().unwrap().enter(coeffs),
+            std::cmp::Ordering::Less => self.subtree().unwrap().enter(coeffs),
             std::cmp::Ordering::Equal => self.enter_impl(coeffs),
             std::cmp::Ordering::Greater => panic!("FFTree is too small"),
         }
@@ -174,9 +172,9 @@ impl<F: PrimeField> FFTree<F> {
     }
 
     pub fn exit(&self, evals: &[F]) -> Vec<F> {
-        // TODO: power of two check
+        assert!(evals.len().is_power_of_two());
         match usize::cmp(&evals.len(), &self.f.leaves().len()) {
-            std::cmp::Ordering::Less => self.subtree.as_ref().unwrap().exit(evals),
+            std::cmp::Ordering::Less => self.subtree().unwrap().exit(evals),
             std::cmp::Ordering::Equal => self.exit_impl(evals),
             std::cmp::Ordering::Greater => panic!("FFTree is too small"),
         }
@@ -258,17 +256,34 @@ impl<F: PrimeField> FFTree<F> {
 
     fn get_layer(&self, i: usize) -> FFTreeLayer<'_, F> {
         FFTreeLayer {
-            l: self.f.get_layer(i),
+            _l: self.f.get_layer(i),
+            _isogeny: &self.isogenies[i],
             decomp_matrices: self.decomp_matrices.get_layer(i),
             recomp_matrices: self.recomp_matrices.get_layer(i),
-            isogeny: &self.isogenies[i],
+        }
+    }
+
+    pub(crate) fn subtree(&self) -> Option<&Self> {
+        Some(self.subtree.as_ref()?)
+    }
+}
+
+#[cfg(test)]
+impl<F: PrimeField> FFTree<F> {
+    pub(crate) fn eval_domain(&self, n: usize) -> &[F] {
+        assert!(n.is_power_of_two());
+        let eval_domain = self.f.leaves();
+        match usize::cmp(&n, &eval_domain.len()) {
+            std::cmp::Ordering::Less => self.subtree().unwrap().eval_domain(n),
+            std::cmp::Ordering::Equal => eval_domain,
+            std::cmp::Ordering::Greater => panic!("FFTree is too small"),
         }
     }
 }
 
-/// Returns the two adicity of a point i.e. returns `n` such that 2^n * p = 0.
-/// Returns `None` if `p` isn't a point of order 2^n.
-fn two_adicity<F: PrimeField>(p: Point<F>) -> Option<u32> {
+/// Returns the two adicity of a point i.e. returns `k` such that 2^k * p = 0.
+/// Returns `None` if `p` isn't a point of order 2^k.
+pub fn two_adicity<F: PrimeField>(p: Point<F>) -> Option<u32> {
     let mut acc = p;
     for i in 0..4096 {
         if acc.is_zero() {

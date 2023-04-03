@@ -19,7 +19,7 @@ pub struct Curve<F> {
 }
 
 impl<F: PrimeField> Curve<F> {
-    pub fn new(a: F, b: F) -> Self {
+    pub const fn new(a: F, b: F) -> Self {
         Self { a, b }
     }
 
@@ -131,7 +131,7 @@ pub struct Point<F> {
 }
 
 impl<F: PrimeField> Point<F> {
-    pub fn new(x: F, y: F, curve: Curve<F>) -> Self {
+    pub const fn new(x: F, y: F, curve: Curve<F>) -> Self {
         let curve = Some(curve);
         Self { x, y, curve }
     }
@@ -161,7 +161,7 @@ impl<F: PrimeField> Add for Point<F> {
                 // use tangent line
                 let x1x1 = x1 * x1;
                 let m = ((x1x1 + x1x1 + x1x1) + curve.a) / y1.double();
-                let x3 = m * m - (x1 + x1);
+                let x3 = m * m - x1.double();
                 let y3 = m * (x1 - x3) - y1;
                 Self::new(x3, y3, curve)
             } else {

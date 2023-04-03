@@ -12,26 +12,12 @@ use std::ops::Range;
 
 /// Returns the cardinality of a curve using Schoofs Algorithm
 pub fn schoofs_algorithm<F: PrimeField>(curve: &Curve<F>) -> BigUint {
-    // Get the list of primes such that p[0] * p[1] ... * p[n-1] > 4*sqrt(p)
-    let primes = {
-        let hi = hasse_interval::<F>();
-        let hasse_interval_len = hi.end - hi.start;
-        let mut res = Vec::new();
-        let mut prod = BigUint::one();
-        let mut small_primes = SMALL_PRIMES.into_iter();
-        while prod < hasse_interval_len {
-            let prime = small_primes.next().unwrap();
-            prod *= prime;
-            res.push(prime as usize);
-        }
-        res
-    };
-
     let Curve { a, b } = *curve;
     let x3_ax_b = DensePolynomial::from_coefficients_vec(vec![b, a, F::zero(), F::one()]);
     let p: BigUint = F::MODULUS.into();
     let mut congruences = BTreeMap::new();
-    for l in primes {
+
+    for l in schoof_primes::<F>() {
         if l == 2 {
             congruences.insert(l, if has_even_order(curve) { 0 } else { 1 });
             continue;
@@ -40,17 +26,26 @@ pub fn schoofs_algorithm<F: PrimeField>(curve: &Curve<F>) -> BigUint {
         // handle odd primes
         let pl = &p % l;
         let psi = division_polynomial(l, curve);
-
-        // // compute xp = x^p mod (lth division polynomial)
-        // // compute xpp = x^(p^2) mod (lth division polynomial)
-        // const xp = polynomial.x.powMod(Fe.modulus, modulus);
-        // const xpp = xp.powMod(Fe.modulus, modulus);
+        todo!()
     }
 
     todo!()
 }
 
-// fn schoofs_odd_prime<F: PrimeField>(l: )
+/// Returns a list of primes such that primes[0] * ... * primes[n-1] > 4*sqrt(p)
+fn schoof_primes<F: PrimeField>() -> Vec<usize> {
+    let hi = hasse_interval::<F>();
+    let hasse_interval_len = hi.end - hi.start;
+    let mut res = Vec::new();
+    let mut product = BigUint::one();
+    let mut small_primes = SMALL_PRIMES.into_iter();
+    while product < hasse_interval_len {
+        let prime = small_primes.next().unwrap();
+        res.push(prime as usize);
+        product *= prime;
+    }
+    res
+}
 
 /// Returns true if there is an even number of points on the curve.
 fn has_even_order<F: PrimeField>(curve: &Curve<F>) -> bool {
@@ -73,8 +68,8 @@ fn has_even_order<F: PrimeField>(curve: &Curve<F>) -> bool {
     let x = DensePolynomial::from_coefficients_vec(vec![F::zero(), F::one()]);
     let xp = utils::pow_mod(&x, p, &x3_ax_b);
 
-    // Compute gcd(xp - x, x^3 + A*x + B) by successive squaring.
-    // If the gcd is 1, then there's no root and the order is odd.
+    // Compute gcd(xp - x, x^3 + A*x + B). If the gcd is 1, then there's no root and
+    // the order is odd.
     utils::gcd(&(&xp - &x), &x3_ax_b).degree() != 0
 }
 
@@ -130,8 +125,8 @@ pub fn division_polynomial<F: PrimeField>(n: usize, curve: &Curve<F>) -> DensePo
             // = (2 * y)^4
             // = 16 * (y^2)^2
             // = 16 * (x^3 + A*x + B)^2
-            let Curve { a, b } = curve;
-            let yy = DensePolynomial::from_coefficients_vec(vec![*b, *a, F::zero(), F::one()]);
+            let Curve { a, b } = *curve;
+            let yy = DensePolynomial::from_coefficients_vec(vec![b, a, F::zero(), F::one()]);
             let yyyy16 = &yy.naive_mul(&yy) * F::from(16u8);
             // t0 = ψ_(m+2) * ψ_m^3
             // t1 = ψ_(m-1) * ψ_(m+1)^3
@@ -156,32 +151,26 @@ const SMALL_PRIMES: [u32; 46] = [
 #[cfg(test)]
 mod tests {
     use crate::ec::Curve;
+    use crate::ecfft::FFTree;
+    use crate::secp256k1::Fp;
     use crate::utils;
     use ark_ff::Fp256;
     use ark_ff::MontBackend;
     use ark_ff::MontConfig;
     use ark_ff::One;
+    use ark_ff::PrimeField;
     use ark_ff::UniformRand;
     use ark_ff::Zero;
     use ark_poly::univariate::DensePolynomial;
     use ark_poly::DenseUVPolynomial;
 
-    /// Secp256k1 field
-    #[derive(MontConfig)]
-    #[modulus = "57896044618658097711785492504343953926634992332820282019728792003956564819949"]
-    #[generator = "2"]
-    #[small_subgroup_base = "3"]
-    #[small_subgroup_power = "1"]
-    pub struct FqConfig;
-    pub type Fq = Fp256<MontBackend<FqConfig, 4>>;
-
     #[test]
     fn roots_test() {
         let mut rng = rand::thread_rng();
-        let a = Fq::rand(&mut rng);
-        let b = Fq::rand(&mut rng);
-        let x3_ax_b = DensePolynomial::from_coefficients_vec(vec![b, a, Fq::zero(), Fq::one()]);
+        let a = Fp::rand(&mut rng);
+        let b = Fp::rand(&mut rng);
+        let x3_ax_b = DensePolynomial::from_coefficients_vec(vec![b, a, Fp::zero(), Fp::one()]);
         let curve = Curve::new(a, b);
-        println!("Roots: {:?}", utils::find_roots(&x3_ax_b));
+        // println!("Roots: {:?}", utils::find_roots(&x3_ax_b));
     }
 }
