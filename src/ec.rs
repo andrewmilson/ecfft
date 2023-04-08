@@ -4,6 +4,8 @@ use ark_ff::Zero;
 use ark_poly::univariate::DensePolynomial;
 use ark_poly::DenseUVPolynomial;
 use ark_poly::Polynomial;
+use ark_serialize::CanonicalDeserialize;
+use ark_serialize::CanonicalSerialize;
 use num_bigint::BigUint;
 use num_integer::Integer;
 use std::ops::Add;
@@ -12,8 +14,10 @@ use std::ops::Mul;
 use std::ops::Neg;
 
 /// Curve of the form y^2 = x^3 + a*x + b
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct Curve<F> {
+#[derive(
+    Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, CanonicalDeserialize, CanonicalSerialize,
+)]
+pub struct Curve<F: PrimeField> {
     pub a: F,
     pub b: F,
 }
@@ -70,7 +74,7 @@ impl<F: PrimeField> Curve<F> {
 }
 
 // Defines an isogeny between curves
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, CanonicalDeserialize, CanonicalSerialize)]
 pub struct Isogeny<F: PrimeField> {
     pub domain: Curve<F>,
     pub codomain: Curve<F>,
@@ -124,7 +128,7 @@ impl<F: PrimeField> Isogeny<F> {
 
 /// Point on an elliptic curve
 #[derive(Clone, Copy, Debug)]
-pub struct Point<F> {
+pub struct Point<F: PrimeField> {
     pub x: F,
     pub y: F,
     pub curve: Option<Curve<F>>,

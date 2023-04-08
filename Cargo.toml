@@ -12,6 +12,7 @@ edition = "2021"
 
 [dependencies]
 ark-ff = "0.4"
+ark-serialize = { version = "0.4", features = [ "std" ] }
 ark-poly = "0.4"
 ark-ff-optimized = { path = "../optimized-fields" }
 num-bigint = "0.4"

@@ -1,9 +1,12 @@
+use ark_ff::Field;
 use ark_ff::PrimeField;
 use ark_ff::Zero;
 use ark_poly::univariate::DenseOrSparsePolynomial;
 use ark_poly::univariate::DensePolynomial;
 use ark_poly::DenseUVPolynomial;
 use ark_poly::Polynomial;
+use ark_serialize::CanonicalDeserialize;
+use ark_serialize::CanonicalSerialize;
 use num_bigint::BigUint;
 use num_integer::Integer;
 use rand::Rng;
@@ -177,10 +180,10 @@ fn rand_poly<F: PrimeField, R: Rng>(d: Degree, rng: &mut R) -> DensePolynomial<F
     DensePolynomial::from_coefficients_vec((0..=d).map(|_| F::rand(rng)).collect())
 }
 
-#[derive(Clone, Debug)]
-pub struct BinaryTree<T>(Vec<T>);
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
+pub struct BinaryTree<T: CanonicalSerialize + CanonicalDeserialize>(Vec<T>);
 
-impl<T> BinaryTree<T> {
+impl<T: CanonicalSerialize + CanonicalDeserialize> BinaryTree<T> {
     pub fn depth(&self) -> u32 {
         if self.0.is_empty() {
             0
@@ -244,7 +247,7 @@ impl<T> BinaryTree<T> {
     }
 }
 
-impl<T> From<Vec<T>> for BinaryTree<T> {
+impl<T: CanonicalSerialize + CanonicalDeserialize> From<Vec<T>> for BinaryTree<T> {
     fn from(tree: Vec<T>) -> Self {
         let n = tree.len();
         assert!(n.is_power_of_two() || n == 0);
@@ -252,7 +255,7 @@ impl<T> From<Vec<T>> for BinaryTree<T> {
     }
 }
 
-impl<T> Deref for BinaryTree<T> {
+impl<T: CanonicalSerialize + CanonicalDeserialize> Deref for BinaryTree<T> {
     type Target = <Vec<T> as Deref>::Target;
 
     fn deref(&self) -> &Self::Target {
@@ -260,16 +263,16 @@ impl<T> Deref for BinaryTree<T> {
     }
 }
 
-impl<T> DerefMut for BinaryTree<T> {
+impl<T: CanonicalSerialize + CanonicalDeserialize> DerefMut for BinaryTree<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-#[derive(Clone, Copy, Default, Debug)]
-pub struct Mat2x2<F>(pub [[F; 2]; 2]);
+#[derive(Clone, Copy, Default, Debug, CanonicalSerialize, CanonicalDeserialize)]
+pub struct Mat2x2<F: Field>(pub [[F; 2]; 2]);
 
-impl<F: PrimeField> Mat2x2<F> {
+impl<F: Field> Mat2x2<F> {
     pub fn identity() -> Mat2x2<F> {
         Self([[F::one(), F::zero()], [F::zero(), F::one()]])
     }
@@ -287,7 +290,7 @@ impl<F: PrimeField> Mat2x2<F> {
     }
 }
 
-impl<F: PrimeField> Mul<&[F; 2]> for &Mat2x2<F> {
+impl<F: Field> Mul<&[F; 2]> for &Mat2x2<F> {
     type Output = [F; 2];
 
     fn mul(self, rhs: &[F; 2]) -> Self::Output {
