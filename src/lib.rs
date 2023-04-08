@@ -218,10 +218,10 @@ mod m31 {
             let coeffs = &[
                 Fp::one(),
                 Fp::one(),
+                Fp::one(),
                 Fp::zero(),
                 Fp::zero(),
-                Fp::zero(),
-                Fp::zero(),
+                Fp::one(),
                 Fp::zero(),
                 Fp::zero(),
             ];

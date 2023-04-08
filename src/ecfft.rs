@@ -209,14 +209,15 @@ impl<F: PrimeField> FFTree<F> {
         // side will be 0. Therefore if degree < n / 2 then e1 == extend(e0)
         let g1 = self.extend_impl(&e0, Moiety::S1);
         if g1 == e1 {
-            return subtree.degree_impl(&g1);
+            return subtree.degree_impl(&e0);
         }
 
         // compute <(π-g)/Z_0 ≀ S1>
-        let t: Vec<F> = zip(zip(e1, g1), &self.z0_s1_inv)
+        let t1: Vec<F> = zip(zip(e1, g1), &self.z0_s1_inv)
             .map(|((e1, g1), z0_inv)| (e1 - g1) * z0_inv)
             .collect();
-        n / 2 + subtree.degree_impl(&t)
+        let t0 = self.extend_impl(&t1, Moiety::S0);
+        n / 2 + subtree.degree_impl(&t0)
     }
 
     pub fn degree(&self, evals: &[F]) -> usize {
