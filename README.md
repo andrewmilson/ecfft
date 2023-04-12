@@ -1,4 +1,8 @@
+
 # ECFFT
+
+
+
 
 This library enables fast polynomial arithmetic over any prime field by implementing all the algorithms outlined in [Elliptic Curve Fast Fourier Transform (ECFFT) Part I](https://arxiv.org/pdf/2107.08473.pdf). The implemented algorithms are:
 
@@ -14,7 +18,7 @@ This library enables fast polynomial arithmetic over any prime field by implemen
 
 ## Build FFTrees at compile time
 
-FFTrees can be generated and serialized at compile time and then be deserialised and used at runtime. This can be preferable since generating FFTrees involves a significant amount of computation. While this approach improves runtime it will significantly blow up a binary's size.
+FFTrees are the core datastructure that the ECFFT algorithms are built apon. FFTrees can be generated and serialized at compile time and then be deserialised and used at runtime. This can be preferable since generating FFTrees involves a significant amount of computation. While this approach improves runtime it will significantly blow up a binary's size. TODO: mention about how much runtime and space of generated FFTree is.
 
 ```rust
 // build.rs
@@ -60,9 +64,6 @@ fn main() {
 }
 ```
 
-TODO: Given the runtime of generating an FFTree can be O(n^2) the library provides the ability to specify what algorithms will be required at runtime. This can dramatically speed up the time it takes to generate an FFTree since only certain precomputations can be omitted since they are only used for specific algorithms.
-
-TODO: Another issue is the sheer size of the FFTree. The precomputation FFTree space complexity of O(n) but this can quickly get to many MB/GB if the
-
-
 # Performance
+
+TODO
