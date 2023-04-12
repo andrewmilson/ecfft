@@ -9,6 +9,7 @@ use ark_poly::Polynomial;
 use ark_serialize::CanonicalDeserialize;
 use ark_serialize::CanonicalSerialize;
 use ark_serialize::Valid;
+use std::cmp::Ordering;
 use std::iter::zip;
 
 #[derive(Clone, Copy, Debug)]
@@ -48,8 +49,12 @@ pub struct FFTree<F: PrimeField> {
     decomp_matrices: BinaryTree<Mat2x2<F>>,
     isogenies: Vec<Isogeny<F>>,
     subtree: Option<Box<Self>>,
-    xnn_s: Vec<F>,     // = <X^(n/2) ≀ S>
-    z0_s1_inv: Vec<F>, // = <1/Z_0 ≀ S_1>
+    xnn_s: Vec<F>,         // = <X^(n/2) ≀ S>
+    xnn_s_inv: Vec<F>,     // = <1/X^(n/2) ≀ S>
+    pub z0_s1: Vec<F>,     // = <Z_0 ≀ S_1>
+    pub z1_s0: Vec<F>,     // = <Z_1 ≀ S_0>
+    pub z0_s1_inv: Vec<F>, // = <1/Z_0 ≀ S_1>
+    pub z1_s0_inv: Vec<F>, // = <1/Z_1 ≀ S_0>
 }
 
 impl<F: PrimeField> FFTree<F> {
@@ -154,21 +159,37 @@ impl<F: PrimeField> FFTree<F> {
         res
     }
 
-    pub fn extend(&self, evals: &[F]) -> Vec<F> {
-        self.extend_moiety(evals, Moiety::S1)
-    }
-
     /// Extends evals on the chosen moiety
-    pub fn extend_moiety(&self, evals: &[F], moiety: Moiety) -> Vec<F> {
+    pub fn extend(&self, evals: &[F], moiety: Moiety) -> Vec<F> {
         assert!(evals.len().is_power_of_two());
         match usize::cmp(&(evals.len() * 2), &self.f.leaves().len()) {
-            std::cmp::Ordering::Less => self.subtree().unwrap().extend(evals),
-            std::cmp::Ordering::Equal => self.extend_impl(evals, moiety),
-            std::cmp::Ordering::Greater => panic!("FFTree is too small"),
+            Ordering::Less => self.subtree().unwrap().extend(evals, moiety),
+            Ordering::Equal => self.extend_impl(evals, moiety),
+            Ordering::Greater => panic!("FFTree is too small"),
         }
     }
 
-    pub fn enter_impl(&self, coeffs: &[F]) -> Vec<F> {
+    fn mextend_impl(&self, evals: &[F], moiety: Moiety) -> Vec<F> {
+        let e = self.extend_impl(evals, moiety);
+        let z = match moiety {
+            Moiety::S1 => &self.z0_s1,
+            Moiety::S0 => &self.z1_s0,
+        };
+        zip(e, z).map(|(e, z)| e + z).collect()
+    }
+
+    /// Extends evals on the chosen moiety
+    /// TODO: docs
+    pub fn mextend(&self, evals: &[F], moiety: Moiety) -> Vec<F> {
+        assert!(evals.len().is_power_of_two());
+        match usize::cmp(&(evals.len() * 2), &self.f.leaves().len()) {
+            Ordering::Less => self.subtree().unwrap().mextend(evals, moiety),
+            Ordering::Equal => self.mextend_impl(evals, moiety),
+            Ordering::Greater => panic!("FFTree is too small"),
+        }
+    }
+
+    fn enter_impl(&self, coeffs: &[F]) -> Vec<F> {
         let n = coeffs.len();
         if n == 1 {
             return coeffs.to_vec();
@@ -177,8 +198,8 @@ impl<F: PrimeField> FFTree<F> {
         let subtree = self.subtree().unwrap();
         let u0 = subtree.enter(&coeffs[0..n / 2]);
         let v0 = subtree.enter(&coeffs[n / 2..]);
-        let u1 = self.extend(&u0);
-        let v1 = self.extend(&v0);
+        let u1 = self.extend(&u0, Moiety::S1);
+        let v1 = self.extend(&v0, Moiety::S1);
 
         self.xnn_s
             .array_chunks()
@@ -190,13 +211,13 @@ impl<F: PrimeField> FFTree<F> {
     pub fn enter(&self, coeffs: &[F]) -> Vec<F> {
         assert!(coeffs.len().is_power_of_two());
         match usize::cmp(&coeffs.len(), &self.f.leaves().len()) {
-            std::cmp::Ordering::Less => self.subtree().unwrap().enter(coeffs),
-            std::cmp::Ordering::Equal => self.enter_impl(coeffs),
-            std::cmp::Ordering::Greater => panic!("FFTree is too small"),
+            Ordering::Less => self.subtree().unwrap().enter(coeffs),
+            Ordering::Equal => self.enter_impl(coeffs),
+            Ordering::Greater => panic!("FFTree is too small"),
         }
     }
 
-    pub fn degree_impl(&self, evals: &[F]) -> isize {
+    fn degree_impl(&self, evals: &[F]) -> isize {
         let n = evals.len() as isize;
         if n == 1 {
             return 0;
@@ -205,14 +226,15 @@ impl<F: PrimeField> FFTree<F> {
         let subtree = self.subtree().unwrap();
         let (e0, e1): (Vec<F>, Vec<F>) = evals.chunks(2).map(|e| (e[0], e[1])).unzip();
 
-        // The intuition is that if degree < n / 2 then all coefficients on the right
-        // side will be 0. Therefore if degree < n / 2 then e1 == extend(e0)
+        // The intuition is that if degree < n / 2 then all coefficients on the RHS
+        // will be 0. Therefore if degree < n / 2 then e1 == extend(e0)
         let g1 = self.extend_impl(&e0, Moiety::S1);
         if g1 == e1 {
             return subtree.degree_impl(&e0);
         }
 
         // compute <(π-g)/Z_0 ≀ S1>
+        // isolate the evaluations of the coefficients on the RHS
         let t1: Vec<F> = zip(zip(e1, g1), &self.z0_s1_inv)
             .map(|((e1, g1), z0_inv)| (e1 - g1) * z0_inv)
             .collect();
@@ -220,12 +242,13 @@ impl<F: PrimeField> FFTree<F> {
         n / 2 + subtree.degree_impl(&t0)
     }
 
+    /// Evaluates the degree of an evaluation table in O(n log n)
     pub fn degree(&self, evals: &[F]) -> usize {
         assert!(evals.len().is_power_of_two());
         match usize::cmp(&evals.len(), &self.f.leaves().len()) {
-            std::cmp::Ordering::Less => self.subtree().unwrap().degree(evals),
-            std::cmp::Ordering::Equal => self.degree_impl(evals).max(0).unsigned_abs(),
-            std::cmp::Ordering::Greater => panic!("FFTree is too small"),
+            Ordering::Less => self.subtree().unwrap().degree(evals),
+            Ordering::Equal => self.degree_impl(evals).max(0).unsigned_abs(),
+            Ordering::Greater => panic!("FFTree is too small"),
         }
     }
 
@@ -235,37 +258,243 @@ impl<F: PrimeField> FFTree<F> {
             return evals.to_vec();
         }
 
-        todo!()
+        println!("d{}", evals.len());
+        let u0: Vec<F> = self
+            .modular_reduce_impl(evals, &self.xnn_s)
+            .array_chunks()
+            .map(|[u0, _]| *u0)
+            .collect();
+        println!("u{}", u0.len());
+
+        let subtree = self.subtree().unwrap();
+        let mut a = subtree.exit_impl(&u0);
+
+        let xnn0_inv = self.xnn_s_inv.array_chunks().map(|[xnn0, _]| xnn0);
+        let e0 = evals.array_chunks().map(|[e0, _]| e0);
+        let v0: Vec<F> = zip(zip(e0, u0), xnn0_inv)
+            .map(|((&e0, u0), xnn0_inv)| (e0 - u0) * xnn0_inv)
+            .collect();
+        let mut b = subtree.exit_impl(&v0);
+
+        println!("{} {}", a.len(), b.len());
+        a.append(&mut b);
+        a
     }
 
     pub fn exit(&self, evals: &[F]) -> Vec<F> {
         assert!(evals.len().is_power_of_two());
         match usize::cmp(&evals.len(), &self.f.leaves().len()) {
-            std::cmp::Ordering::Less => self.subtree().unwrap().exit(evals),
-            std::cmp::Ordering::Equal => self.exit_impl(evals),
-            std::cmp::Ordering::Greater => panic!("FFTree is too small"),
+            Ordering::Less => self.subtree().unwrap().exit(evals),
+            Ordering::Equal => self.exit_impl(evals),
+            Ordering::Greater => panic!("FFTree is too small"),
+        }
+    }
+
+    fn redc_z0_impl(&self, evals: &[F], a: &[F]) -> Vec<F> {
+        let (e0, e1): (Vec<F>, Vec<F>) = evals.chunks(2).map(|e| (e[0], e[1])).unzip();
+        let (mut a0_inv, a1): (Vec<F>, Vec<F>) = a.chunks(2).map(|a| (a[0], a[1])).unzip();
+        batch_inversion(&mut a0_inv);
+
+        // compute <π/a ≀ S0>
+        let t0: Vec<F> = zip(e0, a0_inv).map(|(e0, a0_inv)| e0 * a0_inv).collect();
+        let g1 = self.extend_impl(&t0, Moiety::S1);
+        // compute <(π - a*g)/Z_0 ≀ S1>
+        let h1: Vec<F> = zip(zip(e1, g1), zip(a1, &self.z0_s1_inv))
+            .map(|((e1, g1), (a1, z0_inv))| (e1 - g1 * a1) * z0_inv)
+            .collect();
+        let h0 = self.extend_impl(&h1, Moiety::S0);
+
+        zip(h0, h1).flat_map(|h| [h.0, h.1]).collect()
+    }
+
+    /// Computes <P(X)*Z_0(x)^(-1) mod a ≀ S>
+    /// Z_0 is the vanishing polynomial of S_0
+    /// `a` must be a polynomial of degree at most n/2 having no zeroes in S_0
+    pub fn redc_z0(&self, evals: &[F], a: &[F]) -> Vec<F> {
+        assert!(evals.len().is_power_of_two());
+        match usize::cmp(&evals.len(), &self.f.leaves().len()) {
+            Ordering::Less => self.subtree().unwrap().redc_z0(evals, a),
+            Ordering::Equal => self.redc_z0_impl(evals, a),
+            Ordering::Greater => panic!("FFTree is too small"),
+        }
+    }
+
+    fn redc_z1_impl(&self, evals: &[F], a: &[F]) -> Vec<F> {
+        let (e0, e1): (Vec<F>, Vec<F>) = evals.chunks(2).map(|e| (e[0], e[1])).unzip();
+        let (a0, mut a1_inv): (Vec<F>, Vec<F>) = a.chunks(2).map(|a| (a[0], a[1])).unzip();
+        batch_inversion(&mut a1_inv);
+
+        // compute <π/a ≀ S1>
+        let t1: Vec<F> = zip(e1, a1_inv).map(|(e1, a1_inv)| e1 * a1_inv).collect();
+        let g0 = self.extend_impl(&t1, Moiety::S0);
+        // compute <(π - a*g)/Z_1 ≀ S1>
+        let h0: Vec<F> = zip(zip(e0, g0), zip(a0, &self.z1_s0_inv))
+            .map(|((e0, g0), (a0, z1_inv))| (e0 - g0 * a0) * z1_inv)
+            .collect();
+        let h1 = self.extend_impl(&h0, Moiety::S1);
+
+        zip(h0, h1).flat_map(|h| [h.0, h.1]).collect()
+    }
+
+    /// Computes <P(X)*Z_1(x)^(-1) mod a ≀ S>
+    /// Z_1 is the vanishing polynomial of S_1
+    /// `a` must be a polynomial of degree at most n/2 having no zeroes in S_1
+    pub fn redc_z1(&self, evals: &[F], a: &[F]) -> Vec<F> {
+        assert!(evals.len().is_power_of_two());
+        match usize::cmp(&evals.len(), &self.f.leaves().len()) {
+            Ordering::Less => self.subtree().unwrap().redc_z1(evals, a),
+            Ordering::Equal => self.redc_z1_impl(evals, a),
+            Ordering::Greater => panic!("FFTree is too small"),
+        }
+    }
+
+    fn modular_reduce_impl(&self, evals: &[F], a: &[F]) -> Vec<F> {
+        // TODO: precompute. surely a better way to calculate C(X) = Z0(X)^2 rem A(X)
+
+        // let z0z0: Vec<F> = self.z0_s1.iter().flat_map(|&y| [F::zero(), y]).collect();
+        let z0: Vec<F> = self.z0_s1.iter().flat_map(|y| [F::zero(), *y]).collect();
+        let z0_inv_z1_mod_a = self.redc_z1_impl(&z0, a);
+        // println!("z000000: {:?}", z0_inv_z1_mod_a);
+
+        let z1: Vec<F> = self.z1_s0.iter().flat_map(|y| [*y, F::zero()]).collect();
+        let z1_inv_z0_mod_a = self.redc_z0_impl(&z1, a);
+
+        println!(
+            "{:?}",
+            zip(z0_inv_z1_mod_a, z1_inv_z0_mod_a)
+                .map(|(a, b)| a + b)
+                .collect::<Vec<F>>(),
+        );
+
+        // println!("z111111: {:?}", z1_inv_z0_mod_a);
+        // println!(
+        //     "yo: {:?}",
+        //     zip(z0_inv_z1_mod_a, z1_inv_z0_mod_a)
+        //         .map(|(a, b)| a * b)
+        //         .collect::<Vec<F>>()
+        // );
+
+        // println!("tm[: {:?}", tmp);
+        // // let tmp: Vec<F> = zip(tmp, &self.z1_s0).map(|(v, z1)| v * z1).collect();
+        // println!("tm[: {:?}", tmp);
+        todo!()
+
+        // println!("REDC");
+        // // let zero = F::zero();
+        // // let z0_s_inv: Vec<F> = self
+        // //     .z0_s1_inv
+        // //     .iter()
+        // //     .flat_map(|&y| [zero, y.square().inverse().unwrap()])
+        // //     .collect();
+        // // let mut c = self.redc_impl(&z0_s_inv, a);
+        // // // batch_inversion(&mut c);
+        // // println!(
+        // //     "g: {:?}",
+        // //     self.z0_s1_inv
+        // //         .iter()
+        // //         .map(|v| v.inverse().unwrap())
+        // // //         .collect::<Vec<F>>()
+        // // // );
+        // // // println!("c: {:?}", c);
+        // // // println!("DEGREE: {}", self.degree_impl(&c));
+        // // let zero = F::zero();
+        // // let z0_s_inv: Vec<F> = self.z0_s1_inv.iter().flat_map(|&y| [zero,
+        // // y]).collect(); let mut c = self.redc_impl(&z0_s_inv, a);
+        // // // let mut c2 = self.redc_impl(&c, a);
+        // // // batch_inversion(&mut c);
+        // // println!("z0 original: {:?}", self.z0_s1_inv);
+        // // println!("g: {:?}", z0_s_inv);
+        // // println!("c: {:?}", c);
+        // // // println!("HERE: {:?}", )
+        // // // println!("c2: {:?}", c2);
+        // // println!("DEGREE: {}", self.degree_impl(&c));
+        // let z0z0_s: Vec<F> = self
+        //     .z0_s1_inv
+        //     .iter()
+        //     // .flat_map(|&y| [F::zero(), y.inverse().unwrap().pow([2])])
+        //     // .flat_map(|&y| [F::zero(), y.inverse().unwrap()])
+        //     .flat_map(|&y| [F::one(), F::one()])
+        //     .collect();
+
+        // // let c: Vec<F> = zip(&z0z0_s, a_inv).map(|(z, a)| *z *
+        // a).collect(); // println!("C: {:?}", c);
+        // // println!("C: {:?}", self.degree(&c));
+        // // println!("z0z0_s: {:?}", z0z0_s);
+        // // let s = self.f.get_layer(0);
+        // let c = self.redc_impl(&z0z0_s, a);
+        // let c = self.redc_impl(&c, a);
+        // let c = self.redc_impl(&c, a);
+        // println!("c: {:?}", c);
+        // // let c = self.redc_impl(&c, a);
+        // // println!("c: {:?}", c);
+        // // let (mut c0, _): (Vec<F>, Vec<F>) = c.chunks(2).map(|c| (c[0],
+        // // c[1])).unzip(); batch_inversion(&mut c0);
+        // // let c1 = self.extend_impl(&c0, Moiety::S1);
+        // // println!("a: {:?}, {:?}", c0, c1);
+
+        // // let h = self.redc_impl(evals, a);
+        // // println!("h len {}", h.len());
+        // // let hc: Vec<F> = zip(h, c).map(|(h, c)| h * c).collect();
+        // // self.redc_impl(&hc, a)
+        // println!("Up: {:?}", self.z0_s1_inv);
+
+        // todo!()
+    }
+
+    pub fn modular_reduce(&self, evals: &[F], a: &[F]) -> Vec<F> {
+        assert!(evals.len().is_power_of_two());
+        match usize::cmp(&evals.len(), &self.f.leaves().len()) {
+            Ordering::Less => self.subtree().unwrap().modular_reduce(evals, a),
+            Ordering::Equal => self.modular_reduce_impl(evals, a),
+            Ordering::Greater => panic!("FFTree is too small"),
+        }
+    }
+
+    fn vanishing_polynomial_impl(&self, vanish_domain: &[F]) -> Vec<F> {
+        let n = vanish_domain.len();
+        if n == 1 {
+            let l = self.f.leaves();
+            assert_eq!(2, l.len());
+            let alpha = vanish_domain[0];
+            return vec![alpha - l[0], alpha - l[1]];
+        }
+
+        let subtree = self.subtree().unwrap();
+        let qp = subtree.vanishing_polynomial_impl(&vanish_domain[0..n / 2]);
+        let qpp = subtree.vanishing_polynomial_impl(&vanish_domain[n / 2..n]);
+        let q_s0: Vec<F> = zip(qp, qpp).map(|(qp, qpp)| qp * qpp).collect();
+        let q_s1 = self.mextend(&q_s0, Moiety::S1);
+        zip(q_s0, q_s1)
+            .flat_map(|(q_s0, q_s1)| [q_s0, q_s1])
+            .collect()
+    }
+
+    /// Returns an evaluation of the vanishing polynomial Z(x) = ∏ (x - S_i)
+    /// Runtime O(n log^2 n)
+    /// Section 7.1 https://arxiv.org/pdf/2107.08473.pdf
+    pub fn vanishing_polynomial(&self, vanish_domain: &[F]) -> Vec<F> {
+        assert!(vanish_domain.len().is_power_of_two());
+        match usize::cmp(&(vanish_domain.len() * 2), &self.f.leaves().len()) {
+            Ordering::Less => self.subtree().unwrap().vanishing_polynomial(vanish_domain),
+            Ordering::Equal => self.vanishing_polynomial_impl(vanish_domain),
+            Ordering::Greater => panic!("FFTree is too small"),
         }
     }
 
     fn from_tree(f: BinaryTree<F>, isogenies: Vec<Isogeny<F>>) -> Self {
+        let subtree = Self::derive_subtree(&f, &isogenies).map(Box::new);
         let f_layers = f.get_layers();
         let n = f.leaves().len();
         let nn = n as u64 / 2;
         let s = f_layers[0];
 
         // Precompute eval table <X^(n/2) ≀ S>
-        let xnn_s = f_layers[0].iter().map(|x| x.pow([nn])).collect();
+        let xnn_s = f_layers[0].iter().map(|x| x.pow([nn])).collect::<Vec<F>>();
+        let mut xnn_s_inv = xnn_s.clone();
+        batch_inversion(&mut xnn_s_inv);
 
+        // Split S into its two moieties S0 and S1
         let (s0, s1): (Vec<F>, Vec<F>) = s.chunks_exact(2).map(|s| (s[0], s[1])).unzip();
-
-        // Precompute eval table <Z_0 ≀ S_1>
-        // i.e. evaluate S_1 over Z_0.
-        // Z_0 is the vanishing polynomial of S_0 i.e. Z_0(x) = Π(x - s0_i)
-        let mut z0_s1_inv: Vec<F> = s1
-            .iter()
-            .map(|&s1| s0.iter().fold(F::one(), |acc, &s0| acc * (s1 - s0)))
-            .collect();
-        batch_inversion(&mut z0_s1_inv);
 
         // Generate polynomial decomposition matrices
         // Lemma 3.2 (M_t) https://arxiv.org/abs/2107.08473
@@ -298,16 +527,49 @@ impl<F: PrimeField> FFTree<F> {
             recomp_matrices,
             decomp_matrices,
             isogenies,
-            subtree: None,
+            subtree,
             xnn_s,
-            z0_s1_inv,
+            xnn_s_inv,
+            z0_s1: Vec::new(),
+            z1_s0: Vec::new(),
+            z1_s0_inv: Vec::new(),
+            z0_s1_inv: Vec::new(),
         };
-        tree.subtree = tree.derive_subtree().map(Box::new);
+
+        // Precompute eval tables <Z_0 ≀ S_1> and <Z_1 ≀ S_0> using our partial FFTree
+        // Z_0 is the vanishing polynomial of S_0 i.e. Z_0(x) = Π(x - s0_i)
+        // TODO: might be nice to find a cleaner solution
+        match n.cmp(&2) {
+            Ordering::Greater => {
+                // Compute z0_s1 in O(n log n) using the subtree's vanishing polynomials
+                let zero = F::zero();
+                let st = tree.subtree.as_ref().unwrap();
+                let st_z0_s0: Vec<F> = st.z0_s1.iter().flat_map(|&y| [zero, y]).collect();
+                let st_z1_s0: Vec<F> = st.z1_s0.iter().flat_map(|&y| [y, zero]).collect();
+                let st_z0_s1 = tree.extend(&st_z0_s0, Moiety::S1);
+                let st_z1_s1 = tree.extend(&st_z1_s0, Moiety::S1);
+                tree.z0_s1 = zip(st_z0_s1, st_z1_s1).map(|(z0, z1)| z0 * z1).collect();
+
+                // Compute z1_s0 in O(n log^2 n)
+                let z1_s = tree.vanishing_polynomial(&s1);
+                tree.z1_s0 = z1_s.array_chunks().map(|[z1_s0, _]| *z1_s0).collect();
+            }
+            Ordering::Equal => {
+                tree.z0_s1 = vec![s1[0] - s0[0]];
+                tree.z1_s0 = vec![s0[0] - s1[0]];
+            }
+            Ordering::Less => {}
+        }
+
+        tree.z0_s1_inv = tree.z0_s1.clone();
+        tree.z1_s0_inv = tree.z1_s0.clone();
+        batch_inversion(&mut tree.z0_s1_inv);
+        batch_inversion(&mut tree.z1_s0_inv);
+
         tree
     }
 
-    fn derive_subtree(&self) -> Option<Self> {
-        let Self { isogenies, f, .. } = self;
+    fn derive_subtree(f: &BinaryTree<F>, isogenies: &[Isogeny<F>]) -> Option<Self> {
         let n = f.leaves().len() / 2;
         if n == 0 {
             return None;
@@ -322,7 +584,7 @@ impl<F: PrimeField> FFTree<F> {
             }
         }
 
-        Some(Self::from_tree(f_prime, isogenies.clone()))
+        Some(Self::from_tree(f_prime, isogenies.to_vec()))
     }
 
     fn get_layer(&self, i: usize) -> FFTreeLayer<'_, F> {
@@ -339,6 +601,21 @@ impl<F: PrimeField> FFTree<F> {
     }
 }
 
+#[cfg(test)]
+impl<F: PrimeField> FFTree<F> {
+    // TODO: maybe convert to method to get subtree of size n?
+    // this could be used to simplify public algorithm interfaces on FFTree as well
+    pub(crate) fn eval_domain(&self, n: usize) -> &[F] {
+        assert!(n.is_power_of_two());
+        let eval_domain = self.f.leaves();
+        match usize::cmp(&n, &eval_domain.len()) {
+            std::cmp::Ordering::Less => self.subtree().unwrap().eval_domain(n),
+            std::cmp::Ordering::Equal => eval_domain,
+            std::cmp::Ordering::Greater => panic!("FFTree is too small"),
+        }
+    }
+}
+
 // TODO: implement CanonicalSerialize for Box in arkworks
 // TODO: Derive bug "error[E0275]" with recursive field subtree
 impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
@@ -347,35 +624,66 @@ impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
         mut writer: W,
         compress: ark_serialize::Compress,
     ) -> Result<(), ark_serialize::SerializationError> {
-        self.f.serialize_with_mode(&mut writer, compress)?;
-        self.recomp_matrices
-            .serialize_with_mode(&mut writer, compress)?;
-        self.decomp_matrices
-            .serialize_with_mode(&mut writer, compress)?;
-        self.isogenies.serialize_with_mode(&mut writer, compress)?;
-        self.xnn_s.serialize_with_mode(&mut writer, compress)?;
-        self.z0_s1_inv.serialize_with_mode(&mut writer, compress)?;
+        #[deny(unused_variables)]
+        let Self {
+            f,
+            recomp_matrices,
+            decomp_matrices,
+            isogenies,
+            xnn_s,
+            xnn_s_inv,
+            z0_s1,
+            z1_s0,
+            z0_s1_inv,
+            z1_s0_inv,
+            subtree,
+        } = self;
+        f.serialize_with_mode(&mut writer, compress)?;
+        recomp_matrices.serialize_with_mode(&mut writer, compress)?;
+        decomp_matrices.serialize_with_mode(&mut writer, compress)?;
+        isogenies.serialize_with_mode(&mut writer, compress)?;
+        xnn_s.serialize_with_mode(&mut writer, compress)?;
+        xnn_s_inv.serialize_with_mode(&mut writer, compress)?;
+        z0_s1.serialize_with_mode(&mut writer, compress)?;
+        z1_s0.serialize_with_mode(&mut writer, compress)?;
+        z0_s1_inv.serialize_with_mode(&mut writer, compress)?;
+        z1_s0_inv.serialize_with_mode(&mut writer, compress)?;
         // TODO: get "error[E0275]: overflow evaluating the requirement" for:
-        // self.subtree.as_ref().map(Box::as_ref).serialize_with_mode(...)
-        self.subtree
-            .is_some()
-            .serialize_with_mode(&mut writer, compress)?;
-        if let Some(subtree) = self.subtree.as_ref().map(Box::as_ref) {
+        // subtree.as_ref().map(Box::as_ref).serialize_with_mode(...)
+        (subtree.is_some()).serialize_with_mode(&mut writer, compress)?;
+        if let Some(subtree) = subtree.as_ref().map(Box::as_ref) {
             subtree.serialize_with_mode(writer, compress)?;
         }
         Ok(())
     }
 
     fn serialized_size(&self, compress: ark_serialize::Compress) -> usize {
-        self.f.serialized_size(compress)
-            + self.recomp_matrices.serialized_size(compress)
-            + self.recomp_matrices.serialized_size(compress)
-            // self.subtree: 1 (for Option state) + subtree size
-            + 1
-            + self
-                .subtree
-                .as_ref()
-                .map_or(0, |v| v.as_ref().serialized_size(compress))
+        #[deny(unused_variables)]
+        let Self {
+            f,
+            recomp_matrices,
+            decomp_matrices,
+            isogenies,
+            xnn_s,
+            xnn_s_inv,
+            z0_s1,
+            z1_s0,
+            z0_s1_inv,
+            z1_s0_inv,
+            subtree,
+        } = self;
+        f.serialized_size(compress)
+            + recomp_matrices.serialized_size(compress)
+            + decomp_matrices.serialized_size(compress)
+            + isogenies.serialized_size(compress)
+            + xnn_s.serialized_size(compress)
+            + xnn_s_inv.serialized_size(compress)
+            + z0_s1.serialized_size(compress)
+            + z1_s0.serialized_size(compress)
+            + z0_s1_inv.serialized_size(compress)
+            + z1_s0_inv.serialized_size(compress)
+            // subtree: 1 (for Option state) + subtree size
+            + 1 + subtree.as_ref().map_or(0, |v| v.as_ref().serialized_size(compress))
     }
 }
 
@@ -399,7 +707,11 @@ impl<F: PrimeField> CanonicalDeserialize for FFTree<F> {
         let decomp_matrices = BinaryTree::deserialize_with_mode(&mut reader, compress, validate)?;
         let isogenies = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
         let xnn_s = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
+        let xnn_s_inv = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
+        let z0_s1 = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
+        let z1_s0 = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
         let z0_s1_inv = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
+        let z1_s0_inv = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
         let subtree = if bool::deserialize_with_mode(&mut reader, compress, validate)? {
             Some(Box::new(Self::deserialize_with_mode(
                 reader, compress, validate,
@@ -414,21 +726,12 @@ impl<F: PrimeField> CanonicalDeserialize for FFTree<F> {
             isogenies,
             subtree,
             xnn_s,
+            xnn_s_inv,
+            z0_s1,
+            z1_s0,
             z0_s1_inv,
+            z1_s0_inv,
         })
-    }
-}
-
-#[cfg(test)]
-impl<F: PrimeField> FFTree<F> {
-    pub(crate) fn eval_domain(&self, n: usize) -> &[F] {
-        assert!(n.is_power_of_two());
-        let eval_domain = self.f.leaves();
-        match usize::cmp(&n, &eval_domain.len()) {
-            std::cmp::Ordering::Less => self.subtree().unwrap().eval_domain(n),
-            std::cmp::Ordering::Equal => eval_domain,
-            std::cmp::Ordering::Greater => panic!("FFTree is too small"),
-        }
     }
 }
 

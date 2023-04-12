@@ -82,6 +82,7 @@ mod secp256k1 {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use crate::ecfft::Moiety;
         use ark_poly::univariate::DensePolynomial;
         use ark_poly::DenseUVPolynomial;
         use ark_poly::Polynomial;
@@ -121,7 +122,7 @@ mod secp256k1 {
             let (s0, s1): (Vec<Fp>, Vec<Fp>) = eval_domain.chunks(2).map(|s| (s[0], s[1])).unzip();
             let s0_evals: Vec<Fp> = s0.iter().map(|x| poly.evaluate(x)).collect();
 
-            let s1_evals_actual = fftree.extend(&s0_evals);
+            let s1_evals_actual = fftree.extend(&s0_evals, Moiety::S1);
 
             let s1_evals_expected: Vec<Fp> = s1.iter().map(|x| poly.evaluate(x)).collect();
             assert_eq!(s1_evals_expected, s1_evals_actual)
@@ -137,7 +138,7 @@ mod secp256k1 {
             let (s0, s1): (Vec<Fp>, Vec<Fp>) = eval_domain.chunks(2).map(|c| (c[0], c[1])).unzip();
             let s1_evals: Vec<Fp> = s1.iter().map(|x| poly.evaluate(x)).collect();
 
-            let s0_evals_actual = fftree.extend_moiety(&s1_evals, ecfft::Moiety::S0);
+            let s0_evals_actual = fftree.extend(&s1_evals, ecfft::Moiety::S0);
 
             let s0_evals_expected: Vec<Fp> = s0.iter().map(|x| poly.evaluate(x)).collect();
             assert_eq!(s0_evals_expected, s0_evals_actual)
@@ -187,6 +188,7 @@ mod m31 {
         use ark_poly::Polynomial;
         use rand::rngs::StdRng;
         use rand::SeedableRng;
+        use std::iter::zip;
         use std::sync::OnceLock;
 
         static FFTREE: OnceLock<ecfft::FFTree<Fp>> = OnceLock::new();
@@ -210,46 +212,23 @@ mod m31 {
         }
 
         #[test]
-        fn extends_evaluations_from_s0_to_s1() {
-            // let n = 8;
+        fn determines_degree() {
             let fftree = get_fftree();
-            let eval_domain = fftree.eval_domain(8);
-            // let eval_domain = fftree.eval_domain(n);
-            let coeffs = &[
-                Fp::one(),
-                Fp::one(),
-                Fp::one(),
-                Fp::zero(),
-                Fp::zero(),
-                Fp::one(),
-                Fp::zero(),
-                Fp::zero(),
-            ];
+            let one = Fp::one();
+            let zero = Fp::zero();
+            let coeffs = &[one, one, one, zero, zero, one, zero, zero];
+            let evals = fftree.enter(coeffs);
+
+            // println!("EVAL DOMAIN: {:?}", fftree.eval_domain(8));
+            // // println!("EVAL DOMAIN: {:?}", fftree.z0_s1_inv);
+            // let coeffs2 = fftree.exit(&evals);
+            // // println!("TOOOO: {:?}", evals);
+            // // println!("TOOOO: {:?}", coeffs2);
+
+            let degree = fftree.degree(&evals);
+
             let poly = DensePolynomial::from_coefficients_slice(coeffs);
-
-            let s0_evals = fftree.enter(coeffs);
-            let evals = eval_domain
-                .iter()
-                .map(|x| poly.evaluate(x))
-                .collect::<Vec<Fp>>();
-            assert_eq!(evals, s0_evals);
-            println!("degree: {}", fftree.degree(&s0_evals));
-
-            // let s1_evals = fftree.extend(&s0_evals);
-
-            // println!("{:?}", s0_evals);
-            // println!("{:?}", s1_evals);
-
-            // let mut rng = StdRng::from_seed([1; 32]);
-
-            // let poly = DensePolynomial::rand(n / 4 - 1, &mut rng);
-            // let (s0, s1): (Vec<Fp>, Vec<Fp>) = eval_domain.chunks(2).map(|s|
-            // (s[0], s[1])).unzip(); let s0_evals: Vec<Fp> =
-            // s0.iter().map(|x| poly.evaluate(x)).collect();
-            // let s1_evals_actual = fftree.extend(&s0_evals);
-            // let s1_evals_expected: Vec<Fp> = s1.iter().map(|x|
-            // poly.evaluate(x)).collect();
-            // assert_eq!(s1_evals_expected, s1_evals_actual)
+            assert_eq!(poly.degree(), degree);
         }
     }
 }

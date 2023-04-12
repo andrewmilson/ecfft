@@ -1,17 +1,20 @@
 # ECFFT
 
 This library enables fast polynomial arithmetic over any prime field by implementing all the algorithms outlined in [Elliptic Curve Fast Fourier Transform (ECFFT) Part I](https://arxiv.org/pdf/2107.08473.pdf). The implemented algorithms are:
-* **_ENTER_** - coefficients to evaluations (fft analogue) in $\mathcal{O}(n\log^2{n})$
-* **_EXIT_** - evaluations to coefficients (ifft analogue) in $\mathcal{O}(n\log^2{n})$
-* **_DEGREE_** - computes a polynomial's degree in $\mathcal{O}(n\log{n})$
-* **_EXTEND_** - extends evaluations from one set to another in $\mathcal{O}(n\log{n})$
-* **_MEXTEND_** - _EXTEND_  for special monic polynomials in $\mathcal{O}(n\log{n})$
-* **_MOD_** - calculates the remainder of polynomial division in $\mathcal{O}(n\log{n})$
-* **_REDC_** - computes polynomial analogue of Montgomery's REDC in $\mathcal{O}(n\log{n})$
+
+|Algorithm|Description|Runtime|
+|:-|:-|:-|
+|ENTER|Coefficients to evaluations (fft analogue)|$\mathcal{O}(n\log^2{n})$|
+|EXIT|Evaluations to coefficients (ifft analogue)|$\mathcal{O}(n\log^2{n})$|
+|DEGREE|Computes a polynomial's degree|$\mathcal{O}(n\log{n})$|
+|EXTEND|Extends evaluations from one set to another|$\mathcal{O}(n\log{n})$|
+|MEXTEND|EXTEND for special monic polynomials|$\mathcal{O}(n\log{n})$|
+|MOD|Calculates the remainder of polynomial division|$\mathcal{O}(n\log{n})$|
+|REDC|Computes polynomial analogue of Montgomery's REDC|$\mathcal{O}(n\log{n})$|
 
 ## Build FFTrees at compile time
 
-FFTrees can be generated and serialized at compile time and can then be deserialised and used at runtime. This can be preferable since generating FFTrees involves a significant amount of computation. This approach improves runtime but can significantly blow up the binary in size.
+FFTrees can be generated and serialized at compile time and then be deserialised and used at runtime. This can be preferable since generating FFTrees involves a significant amount of computation. While this approach improves runtime it will significantly blow up a binary's size.
 
 ```rust
 // build.rs
