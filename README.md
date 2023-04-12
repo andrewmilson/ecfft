@@ -1,16 +1,17 @@
 # ECFFT
 
-This library enables fast polynomial arithmetic over any prime field by implementing the algorithms outlined in [Elliptic Curve Fast Fourier Transform (ECFFT) Part I](https://arxiv.org/pdf/2107.08473.pdf). The implemented algorithms are:
-* _EXTEND_ - extends evaluations from one set to another 
-* _DEGREE_ - computes a polynomial's degree
-* _ENTER_ - coefficients to evaluations
-* _EXIT_ - evaluations to coefficients
-* _REDC_ - TODO
-* _MOD_ - TODO
+This library enables fast polynomial arithmetic over any prime field by implementing all the algorithms outlined in [Elliptic Curve Fast Fourier Transform (ECFFT) Part I](https://arxiv.org/pdf/2107.08473.pdf). The implemented algorithms are:
+* **_ENTER_** - coefficients to evaluations (fft analogue) in $\mathcal{O}(n\log^2{n})$
+* **_EXIT_** - evaluations to coefficients (ifft analogue) in $\mathcal{O}(n\log^2{n})$
+* **_DEGREE_** - computes a polynomial's degree in $\mathcal{O}(n\log{n})$
+* **_EXTEND_** - extends evaluations from one set to another in $\mathcal{O}(n\log{n})$
+* **_MEXTEND_** - _EXTEND_  for special monic polynomials in $\mathcal{O}(n\log{n})$
+* **_MOD_** - calculates the remainder of polynomial division in $\mathcal{O}(n\log{n})$
+* **_REDC_** - computes polynomial analogue of Montgomery's REDC in $\mathcal{O}(n\log{n})$
 
-## Usage
+## Build FFTrees at compile time
 
-The library intends for FFTrees to be generated and serialized at compile time and then be deserialise and used it at runtime. This is due to large amounts of precomputations that can be computed ahead of time to dramatically speed up the ECFFT algorithms. Example usage: TODO: check these examples even work.
+FFTrees can be generated and serialized at compile time and can then be deserialised and used at runtime. This can be preferable since generating FFTrees involves a significant amount of computation. This approach improves runtime but can significantly blow up the binary in size.
 
 ```rust
 // build.rs
@@ -21,7 +22,7 @@ use ecfft::secp256k1::Fp;
 fn main() -> Result<()> {
     let mut f = File::open(concat!(env!("OUT_DIR"), "/fftree.bin"))?;
     let fftree = Fp::build_fftree(1 << 12);
-    fftree.serialize_uncompressed(&mut f)?;
+    fftree.serialize_compressed(&mut f)?;
     println!("cargo:rerun-if-changed=build.rs");
     Ok(())
 }
