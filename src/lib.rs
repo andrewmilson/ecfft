@@ -10,7 +10,7 @@ use ec::Curve;
 use ec::Point;
 
 /// The interface for fields that are able to be used in ECFFTs.
-trait EcFftField: PrimeField {
+pub trait EcFftField: PrimeField {
     /// Generator of the largest subgroup.
     const COSET_OFFSET: Point<Self>;
 
@@ -41,7 +41,7 @@ trait EcFftField: PrimeField {
     }
 }
 
-mod secp256k1 {
+pub mod secp256k1 {
     use super::*;
     use ark_ff::Fp256;
     use ark_ff::MontBackend;
@@ -163,7 +163,7 @@ mod secp256k1 {
     }
 }
 
-mod m31 {
+pub mod m31 {
     use super::*;
     use ark_ff_optimized::fp31::Fp;
 

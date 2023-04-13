@@ -450,7 +450,7 @@ impl<F: PrimeField> FFTree<F> {
         }
     }
 
-    fn vanishing_polynomial_impl(&self, vanish_domain: &[F]) -> Vec<F> {
+    fn vanish_impl(&self, vanish_domain: &[F]) -> Vec<F> {
         let n = vanish_domain.len();
         if n == 1 {
             let l = self.f.leaves();
@@ -460,8 +460,8 @@ impl<F: PrimeField> FFTree<F> {
         }
 
         let subtree = self.subtree().unwrap();
-        let qp = subtree.vanishing_polynomial_impl(&vanish_domain[0..n / 2]);
-        let qpp = subtree.vanishing_polynomial_impl(&vanish_domain[n / 2..n]);
+        let qp = subtree.vanish_impl(&vanish_domain[0..n / 2]);
+        let qpp = subtree.vanish_impl(&vanish_domain[n / 2..n]);
         let q_s0: Vec<F> = zip(qp, qpp).map(|(qp, qpp)| qp * qpp).collect();
         let q_s1 = self.mextend(&q_s0, Moiety::S1);
         zip(q_s0, q_s1)
@@ -472,11 +472,11 @@ impl<F: PrimeField> FFTree<F> {
     /// Returns an evaluation of the vanishing polynomial Z(x) = ∏ (x - S_i)
     /// Runtime O(n log^2 n)
     /// Section 7.1 https://arxiv.org/pdf/2107.08473.pdf
-    pub fn vanishing_polynomial(&self, vanish_domain: &[F]) -> Vec<F> {
+    pub fn vanish(&self, vanish_domain: &[F]) -> Vec<F> {
         assert!(vanish_domain.len().is_power_of_two());
         match usize::cmp(&(vanish_domain.len() * 2), &self.f.leaves().len()) {
-            Ordering::Less => self.subtree().unwrap().vanishing_polynomial(vanish_domain),
-            Ordering::Equal => self.vanishing_polynomial_impl(vanish_domain),
+            Ordering::Less => self.subtree().unwrap().vanish(vanish_domain),
+            Ordering::Equal => self.vanish_impl(vanish_domain),
             Ordering::Greater => panic!("FFTree is too small"),
         }
     }
@@ -538,7 +538,7 @@ impl<F: PrimeField> FFTree<F> {
 
         // Precompute eval tables <Z_0 ≀ S_1> and <Z_1 ≀ S_0> using our partial FFTree
         // Z_0 is the vanishing polynomial of S_0 i.e. Z_0(x) = Π(x - s0_i)
-        // TODO: might be nice to find a cleaner solution
+        // TODO: this is a little brittle, might be nice to find a cleaner solution
         match n.cmp(&2) {
             Ordering::Greater => {
                 // Compute z0_s1 in O(n log n) using the subtree's vanishing polynomials
@@ -550,8 +550,8 @@ impl<F: PrimeField> FFTree<F> {
                 let st_z1_s1 = tree.extend(&st_z1_s0, Moiety::S1);
                 tree.z0_s1 = zip(st_z0_s1, st_z1_s1).map(|(z0, z1)| z0 * z1).collect();
 
-                // Compute z1_s0 in O(n log^2 n)
-                let z1_s = tree.vanishing_polynomial(&s1);
+                // Compute z1_s in O(n log^2 n)
+                let z1_s = tree.vanish(&s1);
                 tree.z1_s0 = z1_s.array_chunks().map(|[z1_s0, _]| *z1_s0).collect();
             }
             Ordering::Equal => {

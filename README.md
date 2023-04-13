@@ -23,13 +23,15 @@ FFTrees are the core datastructure that the ECFFT algorithms are built apon. FFT
 ```rust
 // build.rs
 
-use ecfft::EcFftField;
-use ecfft::secp256k1::Fp;
+use ark_serialize::CanonicalSerialize;
+use ecfft::{secp256k1::Fp, EcFftField};
+use std::{env, fs::File, io, path::Path};
 
-fn main() -> Result<()> {
-    let mut f = File::open(concat!(env!("OUT_DIR"), "/fftree.bin"))?;
-    let fftree = Fp::build_fftree(1 << 12);
-    fftree.serialize_compressed(&mut f)?;
+fn main() -> io::Result<()> {
+    let fftree = Fp::build_fftree(1 << 16).unwrap();
+    let out_dir = env::var_os("OUT_DIR").unwrap();
+    let path = Path::new(&out_dir).join("fftree");
+    fftree.serialize_compressed(File::create(path)?).unwrap();
     println!("cargo:rerun-if-changed=build.rs");
     Ok(())
 }
@@ -38,27 +40,23 @@ fn main() -> Result<()> {
 ```rust
 // src/main.rs
 
-use ecfft::FFTree;
-use ecfft::secp256k1::Fp;
+use ark_ff::One;
+use ark_serialize::CanonicalDeserialize;
+use ecfft::{ecfft::FFTree, secp256k1::Fp};
 use std::sync::OnceLock;
 
 static FFTREE: OnceLock<FFTree<Fp>> = OnceLock::new();
 
 fn get_fftree() -> &'static FFTree<Fp> {
-    FFTREE.get_or_init(|| {
-        const PATH = concat!(env!("OUT_DIR"), "/fftree.bin"));
-        const BYTES = include_bytes!(path);
-        FFTree::deserialize_compressed(BYTES).unwrap()
-    })
+    const BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/fftree"));
+    FFTREE.get_or_init(|| FFTree::deserialize_compressed(BYTES).unwrap())
 }
 
 fn main() {
     let fftree = get_fftree();
-    let one = Fp::one();
-    let zero = Fp::zero();
-    // = x^3 + x^2 + 1
-    let poly = &[one, zero, one, one];
-    let evals = fftree.enter(poly);
+    // = x^65535 + x^65534 + ... + x + 1
+    let poly = vec![Fp::one(); 1 << 16];
+    let evals = fftree.enter(&poly);
     let coeffs = fftree.exit(&evals);
     assert_eq!(poly, coeffs);
 }
