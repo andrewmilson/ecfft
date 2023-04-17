@@ -8,6 +8,7 @@ use ark_ff::Zero;
 use ark_poly::Polynomial;
 use ark_serialize::CanonicalDeserialize;
 use ark_serialize::CanonicalSerialize;
+use ark_serialize::Compress;
 use ark_serialize::Valid;
 use std::cmp::Ordering;
 use std::iter::zip;
@@ -32,14 +33,6 @@ struct FFTreeLayer<'a, F: PrimeField> {
 //     Enter,
 //     Exit,
 //     Degree,
-// }
-// pub struct FFTree<F: PrimeField> {
-//     pub f: BinaryTree<F>,
-//     pub recomp: BinaryTree<Mat2x2<F>>,
-//     pub decomp: BinaryTree<Mat2x2<F>>,
-//     pub s0: Option<Box<Self>>,
-//     pub s1: Option<Box<Self>>,
-//     pub z: Option<Vec<F>>,
 // }
 
 #[derive(Clone, Debug)]
@@ -161,12 +154,8 @@ impl<F: PrimeField> FFTree<F> {
 
     /// Extends evals on the chosen moiety
     pub fn extend(&self, evals: &[F], moiety: Moiety) -> Vec<F> {
-        assert!(evals.len().is_power_of_two());
-        match usize::cmp(&(evals.len() * 2), &self.f.leaves().len()) {
-            Ordering::Less => self.subtree().unwrap().extend(evals, moiety),
-            Ordering::Equal => self.extend_impl(evals, moiety),
-            Ordering::Greater => panic!("FFTree is too small"),
-        }
+        let tree = self.subtree_with_size(evals.len() * 2);
+        tree.extend_impl(evals, moiety)
     }
 
     fn mextend_impl(&self, evals: &[F], moiety: Moiety) -> Vec<F> {
@@ -181,12 +170,8 @@ impl<F: PrimeField> FFTree<F> {
     /// Extends evals on the chosen moiety
     /// TODO: docs
     pub fn mextend(&self, evals: &[F], moiety: Moiety) -> Vec<F> {
-        assert!(evals.len().is_power_of_two());
-        match usize::cmp(&(evals.len() * 2), &self.f.leaves().len()) {
-            Ordering::Less => self.subtree().unwrap().mextend(evals, moiety),
-            Ordering::Equal => self.mextend_impl(evals, moiety),
-            Ordering::Greater => panic!("FFTree is too small"),
-        }
+        let tree = self.subtree_with_size(evals.len() * 2);
+        tree.mextend_impl(evals, moiety)
     }
 
     fn enter_impl(&self, coeffs: &[F]) -> Vec<F> {
@@ -209,16 +194,12 @@ impl<F: PrimeField> FFTree<F> {
     }
 
     pub fn enter(&self, coeffs: &[F]) -> Vec<F> {
-        assert!(coeffs.len().is_power_of_two());
-        match usize::cmp(&coeffs.len(), &self.f.leaves().len()) {
-            Ordering::Less => self.subtree().unwrap().enter(coeffs),
-            Ordering::Equal => self.enter_impl(coeffs),
-            Ordering::Greater => panic!("FFTree is too small"),
-        }
+        let tree = self.subtree_with_size(coeffs.len());
+        tree.enter_impl(coeffs)
     }
 
-    fn degree_impl(&self, evals: &[F]) -> isize {
-        let n = evals.len() as isize;
+    fn degree_impl(&self, evals: &[F]) -> usize {
+        let n = evals.len();
         if n == 1 {
             return 0;
         }
@@ -244,12 +225,8 @@ impl<F: PrimeField> FFTree<F> {
 
     /// Evaluates the degree of an evaluation table in O(n log n)
     pub fn degree(&self, evals: &[F]) -> usize {
-        assert!(evals.len().is_power_of_two());
-        match usize::cmp(&evals.len(), &self.f.leaves().len()) {
-            Ordering::Less => self.subtree().unwrap().degree(evals),
-            Ordering::Equal => self.degree_impl(evals).max(0).unsigned_abs(),
-            Ordering::Greater => panic!("FFTree is too small"),
-        }
+        let tree = self.subtree_with_size(evals.len());
+        tree.degree_impl(evals)
     }
 
     pub fn exit_impl(&self, evals: &[F]) -> Vec<F> {
@@ -282,12 +259,8 @@ impl<F: PrimeField> FFTree<F> {
     }
 
     pub fn exit(&self, evals: &[F]) -> Vec<F> {
-        assert!(evals.len().is_power_of_two());
-        match usize::cmp(&evals.len(), &self.f.leaves().len()) {
-            Ordering::Less => self.subtree().unwrap().exit(evals),
-            Ordering::Equal => self.exit_impl(evals),
-            Ordering::Greater => panic!("FFTree is too small"),
-        }
+        let tree = self.subtree_with_size(evals.len());
+        tree.exit_impl(evals)
     }
 
     fn redc_z0_impl(&self, evals: &[F], a: &[F]) -> Vec<F> {
@@ -311,12 +284,8 @@ impl<F: PrimeField> FFTree<F> {
     /// Z_0 is the vanishing polynomial of S_0
     /// `a` must be a polynomial of degree at most n/2 having no zeroes in S_0
     pub fn redc_z0(&self, evals: &[F], a: &[F]) -> Vec<F> {
-        assert!(evals.len().is_power_of_two());
-        match usize::cmp(&evals.len(), &self.f.leaves().len()) {
-            Ordering::Less => self.subtree().unwrap().redc_z0(evals, a),
-            Ordering::Equal => self.redc_z0_impl(evals, a),
-            Ordering::Greater => panic!("FFTree is too small"),
-        }
+        let tree = self.subtree_with_size(evals.len());
+        tree.redc_z0_impl(evals, a)
     }
 
     fn redc_z1_impl(&self, evals: &[F], a: &[F]) -> Vec<F> {
@@ -336,16 +305,12 @@ impl<F: PrimeField> FFTree<F> {
         zip(h0, h1).flat_map(|h| [h.0, h.1]).collect()
     }
 
-    /// Computes <P(X)*Z_1(x)^(-1) mod a ≀ S>
+    /// Computes <P(X)*Z_1(x)^(-1) mod A ≀ S>
     /// Z_1 is the vanishing polynomial of S_1
-    /// `a` must be a polynomial of degree at most n/2 having no zeroes in S_1
+    /// `A` must be a polynomial of degree at most n/2 having no zeroes in S_1
     pub fn redc_z1(&self, evals: &[F], a: &[F]) -> Vec<F> {
-        assert!(evals.len().is_power_of_two());
-        match usize::cmp(&evals.len(), &self.f.leaves().len()) {
-            Ordering::Less => self.subtree().unwrap().redc_z1(evals, a),
-            Ordering::Equal => self.redc_z1_impl(evals, a),
-            Ordering::Greater => panic!("FFTree is too small"),
-        }
+        let tree = self.subtree_with_size(evals.len());
+        tree.redc_z1_impl(evals, a)
     }
 
     fn modular_reduce_impl(&self, evals: &[F], a: &[F]) -> Vec<F> {
@@ -442,12 +407,8 @@ impl<F: PrimeField> FFTree<F> {
     }
 
     pub fn modular_reduce(&self, evals: &[F], a: &[F]) -> Vec<F> {
-        assert!(evals.len().is_power_of_two());
-        match usize::cmp(&evals.len(), &self.f.leaves().len()) {
-            Ordering::Less => self.subtree().unwrap().modular_reduce(evals, a),
-            Ordering::Equal => self.modular_reduce_impl(evals, a),
-            Ordering::Greater => panic!("FFTree is too small"),
-        }
+        let tree = self.subtree_with_size(evals.len());
+        tree.modular_reduce_impl(evals, a)
     }
 
     fn vanish_impl(&self, vanish_domain: &[F]) -> Vec<F> {
@@ -473,12 +434,8 @@ impl<F: PrimeField> FFTree<F> {
     /// Runtime O(n log^2 n)
     /// Section 7.1 https://arxiv.org/pdf/2107.08473.pdf
     pub fn vanish(&self, vanish_domain: &[F]) -> Vec<F> {
-        assert!(vanish_domain.len().is_power_of_two());
-        match usize::cmp(&(vanish_domain.len() * 2), &self.f.leaves().len()) {
-            Ordering::Less => self.subtree().unwrap().vanish(vanish_domain),
-            Ordering::Equal => self.vanish_impl(vanish_domain),
-            Ordering::Greater => panic!("FFTree is too small"),
-        }
+        let tree = self.subtree_with_size(vanish_domain.len() * 2);
+        tree.vanish_impl(vanish_domain)
     }
 
     fn from_tree(f: BinaryTree<F>, isogenies: Vec<Isogeny<F>>) -> Self {
@@ -550,7 +507,7 @@ impl<F: PrimeField> FFTree<F> {
                 let st_z1_s1 = tree.extend(&st_z1_s0, Moiety::S1);
                 tree.z0_s1 = zip(st_z0_s1, st_z1_s1).map(|(z0, z1)| z0 * z1).collect();
 
-                // Compute z1_s in O(n log^2 n)
+                // Compute z1_s in O(n log^2 n) - .vanish() uses z0_s1.
                 let z1_s = tree.vanish(&s1);
                 tree.z1_s0 = z1_s.array_chunks().map(|[z1_s0, _]| *z1_s0).collect();
             }
@@ -599,25 +556,30 @@ impl<F: PrimeField> FFTree<F> {
     pub(crate) fn subtree(&self) -> Option<&Self> {
         Some(self.subtree.as_ref()?)
     }
+
+    /// Returns a FFTree with `n` leaves
+    pub(crate) fn subtree_with_size(&self, n: usize) -> &Self {
+        assert!(n.is_power_of_two());
+        match usize::cmp(&n, &self.f.leaves().len()) {
+            Ordering::Less => self.subtree().unwrap().subtree_with_size(n),
+            Ordering::Equal => self,
+            Ordering::Greater => panic!("FFTree is too small"),
+        }
+    }
 }
 
 #[cfg(test)]
 impl<F: PrimeField> FFTree<F> {
     // TODO: maybe convert to method to get subtree of size n?
     // this could be used to simplify public algorithm interfaces on FFTree as well
-    pub(crate) fn eval_domain(&self, n: usize) -> &[F] {
-        assert!(n.is_power_of_two());
-        let eval_domain = self.f.leaves();
-        match usize::cmp(&n, &eval_domain.len()) {
-            std::cmp::Ordering::Less => self.subtree().unwrap().eval_domain(n),
-            std::cmp::Ordering::Equal => eval_domain,
-            std::cmp::Ordering::Greater => panic!("FFTree is too small"),
-        }
+    pub(crate) fn eval_domain(&self) -> &[F] {
+        self.f.leaves()
     }
 }
 
 // TODO: implement CanonicalSerialize for Box in arkworks
 // TODO: Derive bug "error[E0275]" with recursive field subtree
+// TODO: add compress version (with flags perhaps)
 impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
     fn serialize_with_mode<W: ark_serialize::Write>(
         &self,
@@ -643,11 +605,14 @@ impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
         decomp_matrices.serialize_with_mode(&mut writer, compress)?;
         isogenies.serialize_with_mode(&mut writer, compress)?;
         xnn_s.serialize_with_mode(&mut writer, compress)?;
-        xnn_s_inv.serialize_with_mode(&mut writer, compress)?;
         z0_s1.serialize_with_mode(&mut writer, compress)?;
         z1_s0.serialize_with_mode(&mut writer, compress)?;
-        z0_s1_inv.serialize_with_mode(&mut writer, compress)?;
-        z1_s0_inv.serialize_with_mode(&mut writer, compress)?;
+        if compress == ark_serialize::Compress::No {
+            // Inverses are the cheapest to regenerate (1 mul per element)
+            xnn_s_inv.serialize_with_mode(&mut writer, compress)?;
+            z0_s1_inv.serialize_with_mode(&mut writer, compress)?;
+            z1_s0_inv.serialize_with_mode(&mut writer, compress)?;
+        }
         // TODO: get "error[E0275]: overflow evaluating the requirement" for:
         // subtree.as_ref().map(Box::as_ref).serialize_with_mode(...)
         (subtree.is_some()).serialize_with_mode(&mut writer, compress)?;
@@ -672,18 +637,21 @@ impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
             z1_s0_inv,
             subtree,
         } = self;
-        f.serialized_size(compress)
+        let mut size = f.serialized_size(compress)
             + recomp_matrices.serialized_size(compress)
             + decomp_matrices.serialized_size(compress)
             + isogenies.serialized_size(compress)
             + xnn_s.serialized_size(compress)
-            + xnn_s_inv.serialized_size(compress)
             + z0_s1.serialized_size(compress)
             + z1_s0.serialized_size(compress)
-            + z0_s1_inv.serialized_size(compress)
-            + z1_s0_inv.serialized_size(compress)
             // subtree: 1 (for Option state) + subtree size
-            + 1 + subtree.as_ref().map_or(0, |v| v.as_ref().serialized_size(compress))
+            + 1 + subtree.as_ref().map_or(0, |v| v.as_ref().serialized_size(compress));
+        if compress == Compress::No {
+            size += xnn_s_inv.serialized_size(compress)
+                + z0_s1_inv.serialized_size(compress)
+                + z1_s0_inv.serialized_size(compress);
+        }
+        size
     }
 }
 
@@ -707,11 +675,26 @@ impl<F: PrimeField> CanonicalDeserialize for FFTree<F> {
         let decomp_matrices = BinaryTree::deserialize_with_mode(&mut reader, compress, validate)?;
         let isogenies = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
         let xnn_s = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
-        let xnn_s_inv = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
         let z0_s1 = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
         let z1_s0 = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
-        let z0_s1_inv = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
-        let z1_s0_inv = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
+        let mut xnn_s_inv: Vec<F>;
+        let mut z0_s1_inv: Vec<F>;
+        let mut z1_s0_inv: Vec<F>;
+        match compress {
+            Compress::Yes => {
+                xnn_s_inv = xnn_s.clone();
+                z0_s1_inv = z0_s1.clone();
+                z1_s0_inv = z1_s0.clone();
+                batch_inversion(&mut xnn_s_inv);
+                batch_inversion(&mut z0_s1_inv);
+                batch_inversion(&mut z1_s0_inv);
+            }
+            Compress::No => {
+                xnn_s_inv = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
+                z0_s1_inv = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
+                z1_s0_inv = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
+            }
+        }
         let subtree = if bool::deserialize_with_mode(&mut reader, compress, validate)? {
             Some(Box::new(Self::deserialize_with_mode(
                 reader, compress, validate,

@@ -136,8 +136,30 @@ pub fn gcd<F: PrimeField>(a: &DensePolynomial<F>, b: &DensePolynomial<F>) -> Den
     }
 }
 
+/// Computes the extended GCD (a * x + b * y = gcd)
+/// The GCD is normalized to a monic polynomial.
+/// Output is of the form (x, y, gcd)
+pub fn xgcd<F: PrimeField>(
+    a: &DensePolynomial<F>,
+    b: &DensePolynomial<F>,
+) -> (DensePolynomial<F>, DensePolynomial<F>, DensePolynomial<F>) {
+    if a.is_zero() {
+        let leading_coeff = b.last().unwrap();
+        let leading_coeff_inv = leading_coeff.inverse().unwrap();
+        return (
+            DensePolynomial::zero(),
+            DensePolynomial::from_coefficients_vec(vec![leading_coeff_inv]),
+            b * leading_coeff_inv,
+        );
+    }
+    let (quotient, remainder) =
+        DenseOrSparsePolynomial::divide_with_q_and_r(&a.into(), &b.into()).unwrap();
+    let (x, y, gcd) = xgcd(&remainder, &quotient);
+    (&y - &quotient.naive_mul(&x), x, gcd)
+}
+
 /// Returns numerator % denominator
-fn div_remainder<F: PrimeField>(
+pub fn div_remainder<F: PrimeField>(
     numerator: &DensePolynomial<F>,
     denominator: &DensePolynomial<F>,
 ) -> DensePolynomial<F> {
@@ -147,7 +169,7 @@ fn div_remainder<F: PrimeField>(
 }
 
 /// Calculates (a^exp) % modulus
-pub(crate) fn pow_mod<F: PrimeField>(
+pub fn pow_mod<F: PrimeField>(
     a: &DensePolynomial<F>,
     mut exp: BigUint,
     modulus: &DensePolynomial<F>,

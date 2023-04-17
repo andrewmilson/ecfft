@@ -1,9 +1,9 @@
-#![feature(array_windows, array_chunks, once_cell)]
+#![feature(array_chunks)]
 
 pub mod ec;
 pub mod ecfft;
 pub mod schoofs;
-mod utils;
+pub mod utils;
 
 use ark_ff::PrimeField;
 use ec::Curve;
@@ -42,7 +42,9 @@ pub trait EcFftField: PrimeField {
 }
 
 pub mod secp256k1 {
-    use super::*;
+    use super::Curve;
+    use super::EcFftField;
+    use super::Point;
     use ark_ff::Fp256;
     use ark_ff::MontBackend;
     use ark_ff::MontConfig;
@@ -81,7 +83,9 @@ pub mod secp256k1 {
 
     #[cfg(test)]
     mod tests {
-        use super::*;
+        use super::EcFftField;
+        use super::Fp;
+        use crate::ecfft::FFTree;
         use crate::ecfft::Moiety;
         use ark_poly::univariate::DensePolynomial;
         use ark_poly::DenseUVPolynomial;
@@ -92,9 +96,9 @@ pub mod secp256k1 {
         use rand::SeedableRng;
         use std::sync::OnceLock;
 
-        static FFTREE: OnceLock<ecfft::FFTree<Fp>> = OnceLock::new();
+        static FFTREE: OnceLock<FFTree<Fp>> = OnceLock::new();
 
-        fn get_fftree() -> &'static ecfft::FFTree<Fp> {
+        fn get_fftree() -> &'static FFTree<Fp> {
             FFTREE.get_or_init(|| Fp::build_fftree(64).unwrap())
         }
 
@@ -104,7 +108,7 @@ pub mod secp256k1 {
             let fftree = get_fftree();
             let mut rng = StdRng::from_seed([1; 32]);
             let poly = DensePolynomial::rand(n - 1, &mut rng);
-            let eval_domain = fftree.eval_domain(n);
+            let eval_domain = fftree.subtree_with_size(n).eval_domain();
 
             let ecfft_evals = fftree.enter(&poly);
 
@@ -116,7 +120,7 @@ pub mod secp256k1 {
         fn extends_evaluations_from_s0_to_s1() {
             let n = 64;
             let fftree = get_fftree();
-            let eval_domain = fftree.eval_domain(n);
+            let eval_domain = fftree.subtree_with_size(n).eval_domain();
             let mut rng = StdRng::from_seed([1; 32]);
             let poly = DensePolynomial::rand(n / 2 - 1, &mut rng);
             let (s0, s1): (Vec<Fp>, Vec<Fp>) = eval_domain.chunks(2).map(|s| (s[0], s[1])).unzip();
@@ -132,29 +136,46 @@ pub mod secp256k1 {
         fn extends_evaluations_from_s1_to_s0() {
             let n = 64;
             let fftree = get_fftree();
-            let eval_domain = fftree.eval_domain(n);
+            let eval_domain = fftree.subtree_with_size(n).eval_domain();
             let mut rng = StdRng::from_seed([1; 32]);
             let poly = DensePolynomial::rand(n / 2 - 1, &mut rng);
             let (s0, s1): (Vec<Fp>, Vec<Fp>) = eval_domain.chunks(2).map(|c| (c[0], c[1])).unzip();
             let s1_evals: Vec<Fp> = s1.iter().map(|x| poly.evaluate(x)).collect();
 
-            let s0_evals_actual = fftree.extend(&s1_evals, ecfft::Moiety::S0);
+            let s0_evals_actual = fftree.extend(&s1_evals, Moiety::S0);
 
             let s0_evals_expected: Vec<Fp> = s0.iter().map(|x| poly.evaluate(x)).collect();
             assert_eq!(s0_evals_expected, s0_evals_actual)
         }
 
         #[test]
-        fn deserialized_tree_works() {
+        fn deserialized_uncompressed_tree_works() {
             let n = 64;
             let fftree = get_fftree();
             let mut rng = StdRng::from_seed([1; 32]);
             let poly = DensePolynomial::rand(n - 1, &mut rng);
-            let eval_domain = fftree.eval_domain(n);
+            let eval_domain = fftree.subtree_with_size(n).eval_domain();
+
+            let mut fftree_bytes = Vec::new();
+            fftree.serialize_uncompressed(&mut fftree_bytes).unwrap();
+            let fftree = FFTree::deserialize_uncompressed(&*fftree_bytes).unwrap();
+            let ecfft_evals = fftree.enter(&poly);
+
+            let expected_evals: Vec<Fp> = eval_domain.iter().map(|x| poly.evaluate(x)).collect();
+            assert_eq!(expected_evals, ecfft_evals);
+        }
+
+        #[test]
+        fn deserialized_compressed_tree_works() {
+            let n = 64;
+            let fftree = get_fftree();
+            let mut rng = StdRng::from_seed([1; 32]);
+            let poly = DensePolynomial::rand(n - 1, &mut rng);
+            let eval_domain = fftree.subtree_with_size(n).eval_domain();
 
             let mut fftree_bytes = Vec::new();
             fftree.serialize_compressed(&mut fftree_bytes).unwrap();
-            let fftree = ecfft::FFTree::deserialize_compressed(&*fftree_bytes).unwrap();
+            let fftree = FFTree::deserialize_compressed(&*fftree_bytes).unwrap();
             let ecfft_evals = fftree.enter(&poly);
 
             let expected_evals: Vec<Fp> = eval_domain.iter().map(|x| poly.evaluate(x)).collect();
@@ -164,8 +185,10 @@ pub mod secp256k1 {
 }
 
 pub mod m31 {
-    use super::*;
-    use ark_ff_optimized::fp31::Fp;
+    use super::Curve;
+    use super::EcFftField;
+    use super::Point;
+    pub use ark_ff_optimized::fp31::Fp;
 
     /// Supersingular curve with 2^31 | #E
     const CURVE: Curve<Fp> = Curve::new(Fp(1), Fp(0));
@@ -180,7 +203,9 @@ pub mod m31 {
     // or loop at solutions to remove duplication of test logic.
     #[cfg(test)]
     mod tests {
-        use super::*;
+        use super::Fp;
+        use crate::ecfft::FFTree;
+        use crate::EcFftField;
         use ark_ff::One;
         use ark_ff::Zero;
         use ark_poly::univariate::DensePolynomial;
@@ -188,12 +213,11 @@ pub mod m31 {
         use ark_poly::Polynomial;
         use rand::rngs::StdRng;
         use rand::SeedableRng;
-        use std::iter::zip;
         use std::sync::OnceLock;
 
-        static FFTREE: OnceLock<ecfft::FFTree<Fp>> = OnceLock::new();
+        static FFTREE: OnceLock<FFTree<Fp>> = OnceLock::new();
 
-        fn get_fftree() -> &'static ecfft::FFTree<Fp> {
+        fn get_fftree() -> &'static FFTree<Fp> {
             FFTREE.get_or_init(|| Fp::build_fftree(64).unwrap())
         }
 
@@ -203,7 +227,7 @@ pub mod m31 {
             let fftree = get_fftree();
             let mut rng = StdRng::from_seed([1; 32]);
             let poly = DensePolynomial::rand(n - 1, &mut rng);
-            let eval_domain = fftree.eval_domain(n);
+            let eval_domain = fftree.subtree_with_size(n).eval_domain();
 
             let ecfft_evals = fftree.enter(&poly);
 
@@ -219,7 +243,7 @@ pub mod m31 {
             let coeffs = &[one, one, one, zero, zero, one, zero, zero];
             let evals = fftree.enter(coeffs);
 
-            // println!("EVAL DOMAIN: {:?}", fftree.eval_domain(8));
+            // println!("EVAL DOMAIN: {:?}", fftree.subtree_with_size(8).eval_domain());
             // // println!("EVAL DOMAIN: {:?}", fftree.z0_s1_inv);
             // let coeffs2 = fftree.exit(&evals);
             // // println!("TOOOO: {:?}", evals);

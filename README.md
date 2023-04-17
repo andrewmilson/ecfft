@@ -1,9 +1,6 @@
 
 # ECFFT
 
-
-
-
 This library enables fast polynomial arithmetic over any prime field by implementing all the algorithms outlined in [Elliptic Curve Fast Fourier Transform (ECFFT) Part I](https://arxiv.org/pdf/2107.08473.pdf). The implemented algorithms are:
 
 |Algorithm|Description|Runtime|
@@ -15,6 +12,7 @@ This library enables fast polynomial arithmetic over any prime field by implemen
 |MEXTEND|EXTEND for special monic polynomials|$\mathcal{O}(n\log{n})$|
 |MOD|Calculates the remainder of polynomial division|$\mathcal{O}(n\log{n})$|
 |REDC|Computes polynomial analogue of Montgomery's REDC|$\mathcal{O}(n\log{n})$|
+|VANISH|Generates a vanishing polynomial ([from section 7.1](https://arxiv.org/pdf/2107.08473.pdf))|$\mathcal{O}(n\log^2{n})$|
 
 ## Build FFTrees at compile time
 
