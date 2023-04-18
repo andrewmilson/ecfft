@@ -20,27 +20,31 @@ use std::ops::Range;
 
 fn main() {
     let curve = Curve::new(Fp::one(), Fp::zero());
-    let cardinality = schoofs_algorithm(&curve);
+    let cardinality = schoofs_algorithm(curve);
 }
 
 /// Returns the cardinality of a curve using Schoofs Algorithm
 /// Implementation based on Algorithm 4.5 from "Elliptic Curves" book by LCW and
 /// https://math.mit.edu/classes/18.783/2015/LectureNotes9.pdf.
-pub fn schoofs_algorithm<F: PrimeField>(curve: &Curve<F>) -> BigUint {
-    let Curve { a, b } = *curve;
+pub fn schoofs_algorithm<F: PrimeField>(curve: Curve<F>) -> BigUint {
+    let Curve { a, b } = curve;
     let x3_ax_b = DensePolynomial::from_coefficients_vec(vec![b, a, F::zero(), F::one()]);
     let p: BigUint = F::MODULUS.into();
     let mut congruences = BTreeMap::new();
 
     for l in schoof_primes::<F>() {
+        println!("l is: {}", l);
+
         if l == 2 {
-            congruences.insert(l, if has_even_order(curve) { 0 } else { 1 });
+            // p + 1 + a ≡ 0 (mod 2) then a = 0 (mod 2) otherwise a = 1 (mod 2)
+            congruences.insert(l, if has_even_order(&curve) { 0 } else { 1 });
             continue;
         }
 
         // handle odd primes
-        let psi = division_polynomial(l, curve);
-        congruences.insert(l, frobenius_trace_mod_l(l, &psi, curve));
+        let psi = division_polynomial(l, &curve);
+        congruences.insert(l, frobenius_trace_mod_l(l, &psi, &curve));
+        println!("{:?}", congruences);
     }
 
     // TODO: CRT
@@ -54,11 +58,20 @@ fn frobenius_trace_mod_l<F: PrimeField>(
     modulus: &DensePolynomial<F>,
     curve: &Curve<F>,
 ) -> usize {
+    println!("l is: {}", l);
     assert!(l.is_odd(), "odd primes only");
     let p = F::MODULUS.into();
     let pl = usize::try_from(&p % l).unwrap();
 
+    println!("MODULSU: {:?}", modulus);
+
+    if modulus.degree() == 0 {
+        panic!("SHEEIIIT")
+    }
+
+    // println!("MODULUS {:?}", modulus);
     if modulus.degree() == 1 {
+        println!("BOOM {l}");
         // Modulus is only made up of factors of the l-th division polynomial.
         // If modulus is a degree 1 polynomial i.e. (x - c) for some constant c
         // then we've found a roots of the l-th division polynomial equal to c.
@@ -80,8 +93,8 @@ fn frobenius_trace_mod_l<F: PrimeField>(
     // composition  of π_1 ∘ π_2. To do this, we apply π_1 to the input
     // coordinates (x, y), and then apply π_2 to the result. (1) Apply π_2:
     // (a_2(x), b_2(x)*y) (2) Apply π_1 to the result of π_2:
-    //   * the x-coord transform: a_1(a_2(x))
-    //   * the y-coord transform: b_1(x') * y' (where x' = a_2(x) and y' = b_2(x)*y)
+    // * the x-coord transform: a_1(a_2(x))
+    // * the y-coord transform: b_1(x') * y' (where x' = a_2(x) and y' = b_2(x)*y)
     let pi_a = pow_mod(&x, p.clone(), modulus);
     let pi_b = pow_mod(&x3_ax_b, (p.clone() - 1u8) / 2u8, modulus);
     let pi_pi_a = pow_mod(&pi_a, p.clone(), modulus);
@@ -95,6 +108,8 @@ fn frobenius_trace_mod_l<F: PrimeField>(
         Err(UninvertablePolynomial(gcd)) => return frobenius_trace_mod_l(l, &gcd, curve),
         Ok(res) => res,
     };
+
+    println!("GRRR: {}", l);
 
     // (x', y') = (a', b' * y) = π^2 + (p mod l) * (x, y) (mod modulus)
     let (a_prime, b_prime) = match add(pi_pi, (&a_pl, &b_pl), modulus, curve) {
@@ -126,10 +141,26 @@ fn frobenius_trace_mod_l<F: PrimeField>(
         }
     }
 
-    // All values 1 ≤ j ≤ (l − 1)/2 have been tried without success.
+    // All values 1 <= j <= (l − 1) / 2 have been tried without success.
     // Now let ω^2 ≡ p (mod l). If ω does not exist, then a ≡ 0 (mod l).
     for omega in 0..l {
-        if (omega * omega) % l == pl {}
+        if (omega * omega) % l == pl {
+            // ω does exist
+            // calculate (a_omega, b_omega * y) = omega * (x, y)
+            let (a_omega, b_omega) = match mul(omega.into(), (&x, &one), modulus, curve) {
+                Err(UninvertablePolynomial(gcd)) => return frobenius_trace_mod_l(l, &gcd, curve),
+                Ok(res) => res,
+            };
+
+            if gcd(&(&a_prime - &a_omega), modulus) == one {
+                return 0;
+            } else if gcd(&(&b_prime - &b_omega), modulus) == one {
+                // -2*ω (mod l)
+                return (l * 2 - 2 * omega) % l;
+            } else {
+                return (2 * omega) % l;
+            }
+        }
     }
 
     // ω does not exist so a = 0
@@ -191,7 +222,7 @@ fn add<F: PrimeField>(
         if gcd != one {
             return Err(UninvertablePolynomial(gcd));
         }
-        &numerator * &denominator_inv
+        numerator.naive_mul(&denominator_inv)
     } else {
         // calculate slope
         let numerator = b1 - b2;
@@ -200,7 +231,7 @@ fn add<F: PrimeField>(
         if gcd != one {
             return Err(UninvertablePolynomial(gcd));
         }
-        &numerator * &denominator_inv
+        numerator.naive_mul(&denominator_inv)
     };
 
     // note that y^2 = x^3 + A*x + B

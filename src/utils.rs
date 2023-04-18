@@ -137,25 +137,62 @@ pub fn gcd<F: PrimeField>(a: &DensePolynomial<F>, b: &DensePolynomial<F>) -> Den
 }
 
 /// Computes the extended GCD (a * x + b * y = gcd)
-/// The GCD is normalized to a monic polynomial.
+/// TODO: The GCD is normalized to a monic polynomial.
 /// Output is of the form (x, y, gcd)
+/// https://en.wikipedia.org/wiki/Extended_Euclidean_algorithm
 pub fn xgcd<F: PrimeField>(
     a: &DensePolynomial<F>,
     b: &DensePolynomial<F>,
 ) -> (DensePolynomial<F>, DensePolynomial<F>, DensePolynomial<F>) {
-    if a.is_zero() {
-        let leading_coeff = b.last().unwrap();
-        let leading_coeff_inv = leading_coeff.inverse().unwrap();
-        return (
-            DensePolynomial::zero(),
-            DensePolynomial::from_coefficients_vec(vec![leading_coeff_inv]),
-            b * leading_coeff_inv,
-        );
+    // if a.is_zero() {
+    //     let leading_coeff = b.last();
+    //     let leading_coeff_inv = leading_coeff.map(|v| v.inverse().unwrap());
+    //     return (
+    //         DensePolynomial::zero(),
+    //         //
+    // DensePolynomial::from_coefficients_vec(vec![leading_coeff_inv.
+    // unwrap_or(F::one())]),
+    //         DensePolynomial::from_coefficients_vec(vec![F::one()]),
+    //         // b * leading_coeff_inv.unwrap_or(F::zero()),
+    //         b.clone(),
+    //     );
+    // }
+    // let (quotient, remainder) =
+    //     DenseOrSparsePolynomial::divide_with_q_and_r(&b.into(),
+    // &a.into()).unwrap(); let (x, y, gcd) = xgcd(&remainder, &quotient);
+    // (&y - &quotient.naive_mul(&x), x, gcd)
+    let zero = DensePolynomial::zero();
+    let one = DensePolynomial::from_coefficients_vec(vec![F::one()]);
+    let mut s = zero.clone();
+    let mut old_s = one;
+    let mut r = b.clone();
+    let mut old_r = a.clone();
+
+    while !r.is_zero() {
+        let (quotient, _) =
+            DenseOrSparsePolynomial::divide_with_q_and_r(&(&old_r).into(), &(&r).into()).unwrap();
+        (r, old_r) = (&old_r - &quotient.naive_mul(&r), r);
+        (s, old_s) = (&old_s - &quotient.naive_mul(&s), s);
     }
-    let (quotient, remainder) =
-        DenseOrSparsePolynomial::divide_with_q_and_r(&a.into(), &b.into()).unwrap();
-    let (x, y, gcd) = xgcd(&remainder, &quotient);
-    (&y - &quotient.naive_mul(&x), x, gcd)
+
+    let bezout_t = if !b.is_zero() {
+        let numerator = (&old_r - &old_s.naive_mul(a)).into();
+        let denominator = b.clone().into();
+        DenseOrSparsePolynomial::divide_with_q_and_r(&numerator, &denominator)
+            .unwrap()
+            .0
+    } else {
+        zero
+    };
+
+    let leading_coeff_inv = old_r.last().map_or(F::one(), |c| c.inverse().unwrap());
+    (
+        &old_s * leading_coeff_inv,
+        &bezout_t * leading_coeff_inv,
+        &old_r * leading_coeff_inv,
+    )
+    // output "Bézout coefficients:", (old_s, bezout_t)
+    // output "greatest common divisor:", old_r
 }
 
 /// Returns numerator % denominator
@@ -328,6 +365,8 @@ mod tests {
     use super::*;
     use ark_ff::One;
     use ark_ff_optimized::fp31::Fp;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
 
     #[test]
     fn finds_roots_of_cubic() {
@@ -343,5 +382,47 @@ mod tests {
 
         let expected = vec![Fp::zero(), Fp::from(2u32), Fp::from(2147483645u32)];
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_xgcd() {
+        let mut rng = StdRng::seed_from_u64(0);
+        let a = DensePolynomial::<Fp>::rand(5, &mut rng);
+        let b = DensePolynomial::<Fp>::rand(5, &mut rng);
+
+        let (x, y, gcd) = xgcd(&a, &b);
+
+        let ax = a.naive_mul(&x);
+        let by = b.naive_mul(&y);
+        assert_eq!(&ax + &by, gcd);
+    }
+
+    #[test]
+    fn test_xgcd_with_linear_gcd() {
+        // a = (x + 1)(x - 1) = x^2 - 1
+        // b = (x + 1)(x + 0) = x^2 + x + 1
+        let a = DensePolynomial::from_coefficients_vec(vec![-Fp::one(), Fp::zero(), Fp::one()]);
+        let b = DensePolynomial::from_coefficients_vec(vec![Fp::one(), Fp::one(), Fp::one()]);
+
+        let (x, y, gcd) = xgcd(&a, &b);
+
+        let ax = a.naive_mul(&x);
+        let by = b.naive_mul(&y);
+        assert_eq!(&ax + &by, gcd);
+        assert_eq!(&[Fp::one(), Fp::one()], &*gcd);
+    }
+
+    #[test]
+    fn test_xgcd_with_zero_polynomial() {
+        let mut rng = StdRng::seed_from_u64(0);
+        let zero = DensePolynomial::<Fp>::zero();
+        let one = DensePolynomial::<Fp>::from_coefficients_vec(vec![Fp::one()]);
+        let b = DensePolynomial::<Fp>::rand(5, &mut rng);
+
+        let (x, y, gcd) = xgcd(&zero, &b);
+
+        assert_eq!(x, zero, "x should be zero polynomial");
+        assert_eq!(b.naive_mul(&y), gcd);
+        assert!(!gcd.is_zero());
     }
 }

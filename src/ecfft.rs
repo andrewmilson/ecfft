@@ -117,6 +117,7 @@ impl<F: PrimeField> FFTree<F> {
 
         let i = self.f.num_layers() - 2 - n.ilog2();
         let layer = self.get_layer(i as usize);
+        // layer.recomp_matrices.
 
         // π_0 and π_1
         let mut evals0 = vec![F::zero(); n / 2];
@@ -544,6 +545,7 @@ impl<F: PrimeField> FFTree<F> {
         Some(Self::from_tree(f_prime, isogenies.to_vec()))
     }
 
+    // TODO: remove
     fn get_layer(&self, i: usize) -> FFTreeLayer<'_, F> {
         FFTreeLayer {
             _l: self.f.get_layer(i),
