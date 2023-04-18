@@ -132,7 +132,7 @@ pub fn gcd<F: PrimeField>(a: &DensePolynomial<F>, b: &DensePolynomial<F>) -> Den
         let leading_coeff = a.last().unwrap();
         a * leading_coeff.inverse().unwrap()
     } else {
-        gcd(b, &div_remainder(a, b))
+        gcd(b, &div_rem(a, b))
     }
 }
 
@@ -159,7 +159,7 @@ pub fn xgcd<F: PrimeField>(
 }
 
 /// Returns numerator % denominator
-pub fn div_remainder<F: PrimeField>(
+pub fn div_rem<F: PrimeField>(
     numerator: &DensePolynomial<F>,
     denominator: &DensePolynomial<F>,
 ) -> DensePolynomial<F> {
@@ -179,9 +179,9 @@ pub fn pow_mod<F: PrimeField>(
     let mut acc = a.clone();
     while !exp.is_zero() {
         if exp.is_odd() {
-            res = div_remainder(&res.naive_mul(&acc), modulus);
+            res = div_rem(&res.naive_mul(&acc), modulus);
         }
-        acc = div_remainder(&acc.naive_mul(&acc), modulus);
+        acc = div_rem(&acc.naive_mul(&acc), modulus);
         exp >>= 1;
     }
     res
