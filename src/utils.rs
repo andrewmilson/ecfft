@@ -136,31 +136,14 @@ pub fn gcd<F: PrimeField>(a: &DensePolynomial<F>, b: &DensePolynomial<F>) -> Den
     }
 }
 
-/// Computes the extended GCD (a * x + b * y = gcd)
-/// TODO: The GCD is normalized to a monic polynomial.
-/// Output is of the form (x, y, gcd)
+/// Computes the extended GCD (a * s + b * t = gcd)
+/// The GCD is normalized to a monic polynomial.
+/// Output is of the form (s, t, gcd) where s and t are Bezout coefficients
 /// https://en.wikipedia.org/wiki/Extended_Euclidean_algorithm
 pub fn xgcd<F: PrimeField>(
     a: &DensePolynomial<F>,
     b: &DensePolynomial<F>,
 ) -> (DensePolynomial<F>, DensePolynomial<F>, DensePolynomial<F>) {
-    // if a.is_zero() {
-    //     let leading_coeff = b.last();
-    //     let leading_coeff_inv = leading_coeff.map(|v| v.inverse().unwrap());
-    //     return (
-    //         DensePolynomial::zero(),
-    //         //
-    // DensePolynomial::from_coefficients_vec(vec![leading_coeff_inv.
-    // unwrap_or(F::one())]),
-    //         DensePolynomial::from_coefficients_vec(vec![F::one()]),
-    //         // b * leading_coeff_inv.unwrap_or(F::zero()),
-    //         b.clone(),
-    //     );
-    // }
-    // let (quotient, remainder) =
-    //     DenseOrSparsePolynomial::divide_with_q_and_r(&b.into(),
-    // &a.into()).unwrap(); let (x, y, gcd) = xgcd(&remainder, &quotient);
-    // (&y - &quotient.naive_mul(&x), x, gcd)
     let zero = DensePolynomial::zero();
     let one = DensePolynomial::from_coefficients_vec(vec![F::one()]);
     let mut s = zero.clone();
@@ -185,14 +168,13 @@ pub fn xgcd<F: PrimeField>(
         zero
     };
 
+    // Normalize the GCD to a monic polynomial
     let leading_coeff_inv = old_r.last().map_or(F::one(), |c| c.inverse().unwrap());
     (
         &old_s * leading_coeff_inv,
         &bezout_t * leading_coeff_inv,
         &old_r * leading_coeff_inv,
     )
-    // output "Bézout coefficients:", (old_s, bezout_t)
-    // output "greatest common divisor:", old_r
 }
 
 /// Returns numerator % denominator

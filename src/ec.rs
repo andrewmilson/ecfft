@@ -63,13 +63,16 @@ impl<F: PrimeField> Curve<F> {
         // The two torsion points have a vertical tangent since 2*P = 0.
         // The points with vertical tangent are those with y = 0.
         // We can find the points if we find the values of x satisfy 0 = x^3 + a*x + b.
-        let Self { a, b } = *self;
-        let x3_ax_b = DensePolynomial::from_coefficients_vec(vec![b, a, F::zero(), F::one()]);
-        let roots = find_roots(&x3_ax_b);
+        let roots = find_roots(&self.x3_ax_b());
         roots
             .into_iter()
             .map(|root| Point::new(root, F::zero(), *self))
             .collect()
+    }
+
+    // Returns the polynomial x^3 + A*x + B
+    pub fn x3_ax_b(&self) -> DensePolynomial<F> {
+        DensePolynomial::from_coefficients_vec(vec![self.b, self.a, F::zero(), F::one()])
     }
 }
 
