@@ -29,40 +29,40 @@ fn main() {
 /// Implementation based on Algorithm 4.5 from "Elliptic Curves" book by LCW and
 /// https://math.mit.edu/classes/18.783/2015/LectureNotes9.pdf.
 pub fn cardinality<F: PrimeField>(curve: Curve<F>) -> BigUint {
-    let mut congruences = BTreeMap::new();
-
-    for l in schoof_primes::<F>() {
-        println!("working on {:?}", l);
-
-        if l == 2 {
-            // p + 1 + a ≡ 0 (mod 2) then a = 0 (mod 2) otherwise a = 1 (mod 2)
-            congruences.insert(l, if has_even_order(curve) { 0 } else { 1 });
-            continue;
-        }
-
-        // handle odd primes
-        let psi = division_polynomial(l, &curve);
-        congruences.insert(l, frobenius_trace_mod_l(l, curve, &psi.into()));
-    }
-
-    // chinese remainder theorem. From algorithm 9.1 in:
-    // https://math.mit.edu/classes/18.783/2015/LectureNotes9.pdf
-    // used to calculate frobenius trace mod `m` where m = l_0 * l_1 * ... * l_n
-    let mut trace = BigInt::zero();
+    let p = F::MODULUS.into();
+    let hasse_interval_len = BigInt::from(p.sqrt() * 4u32);
+    let mut small_primes = SMALL_PRIMES.into_iter();
+    let mut a_mod_m = BigInt::zero();
     let mut m = BigInt::one();
-    for (l, a_mod_l) in congruences {
+    while m < hasse_interval_len {
+        let l = small_primes.next().unwrap();
+        let a_mod_l = if l == 2 {
+            // p + 1 + a ≡ 0 (mod 2) then a = 0 (mod 2) otherwise a = 1 (mod 2)
+            if has_even_order(curve) {
+                0
+            } else {
+                1
+            }
+        } else {
+            // handle odd primes using Schoofs algorithm
+            let psi = division_polynomial(l, &curve);
+            frobenius_trace_mod_l(l, curve, &psi.into())
+        };
+
+        // Incremental Chinese Remainder Theorem. From algorithm 9.1 in:
+        // https://math.mit.edu/classes/18.783/2015/LectureNotes9.pdf
+        // calculates the frobenius trace mod `m` where m = l_0 * l_1 * ... * l_n
         let ExtendedGcd {
             x: m_inv_l,
             y: l_inv_m,
             ..
         } = m.extended_gcd(&l.into());
-        trace = (m_inv_l * &m * a_mod_l + l_inv_m * l * trace) % (&m * l);
+        a_mod_m = (m_inv_l * &m * a_mod_l + l_inv_m * l * a_mod_m) % (&m * l);
         m *= l;
     }
 
-    let a_mod_m = BigUint::try_from((&m + trace) % &m).unwrap();
+    let a_mod_m = BigUint::try_from((&m + a_mod_m) % &m).unwrap();
     let m = BigUint::try_from(m).unwrap();
-    let p = F::MODULUS.into();
     if a_mod_m > &m / 2u8 {
         p + 1u8 + a_mod_m - m
     } else {
@@ -341,21 +341,6 @@ impl<F: PrimeField> From<DensePolynomial<F>> for QuotientRing<F> {
 /// Holds the GCD of the polynomial and the modulus
 struct Uninvertable<F: PrimeField>(DensePolynomial<F>);
 
-/// Returns a list of primes such that primes[0] * ... * primes[n-1] > 4*sqrt(p)
-fn schoof_primes<F: PrimeField>() -> Vec<usize> {
-    let hi = hasse_interval::<F>();
-    let hasse_interval_len = hi.end - hi.start;
-    let mut res = Vec::new();
-    let mut product = BigUint::one();
-    let mut small_primes = SMALL_PRIMES.into_iter();
-    while product < hasse_interval_len {
-        let prime = small_primes.next().unwrap();
-        res.push(prime as usize);
-        product *= prime;
-    }
-    res
-}
-
 /// Returns true if there is an even number of points on the curve.
 fn has_even_order<F: PrimeField>(curve: Curve<F>) -> bool {
     // "if x^3 + A*x + B has a root e ∈ Fp, then (e, 0) ∈ E[2] and (e, 0) ∈ E(Fp),
@@ -378,11 +363,6 @@ fn has_even_order<F: PrimeField>(curve: Curve<F>) -> bool {
     // Compute gcd(xp - x, x^3 + A*x + B). If the gcd is 1, then there's no root and
     // the order is odd.
     gcd(&(&xp - &x), &x3_ax_b) != one
-}
-
-fn hasse_interval<F: PrimeField>() -> Range<BigUint> {
-    let p: BigUint = F::MODULUS.into();
-    (&p + 1u32 - p.sqrt() * 2u32)..(&p + 1u32 + p.sqrt() * 2u32)
 }
 
 /// Returns the nth division polynomial
@@ -448,7 +428,7 @@ pub fn division_polynomial<F: PrimeField>(n: usize, curve: &Curve<F>) -> DensePo
 }
 
 // first 46 primes
-const SMALL_PRIMES: [u32; 46] = [
+const SMALL_PRIMES: [usize; 46] = [
     2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
     101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193,
     197, 199,
