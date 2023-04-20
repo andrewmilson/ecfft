@@ -236,6 +236,19 @@ pub mod m31 {
         }
 
         #[test]
+        fn interpolates_evaluations() {
+            let fftree = get_fftree();
+            let one = Fp::one();
+            let zero = Fp::zero();
+            let coeffs: &[Fp] = &[one, one, one, zero, zero, one, zero, zero];
+            let evals = fftree.enter(coeffs);
+
+            let exit_coeffs = fftree.exit(&evals);
+
+            assert_eq!(coeffs, &exit_coeffs);
+        }
+
+        #[test]
         fn determines_degree() {
             let fftree = get_fftree();
             let one = Fp::one();

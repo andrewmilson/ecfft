@@ -5,8 +5,8 @@ use ark_poly::univariate::DensePolynomial;
 use ark_poly::DenseUVPolynomial;
 use ark_poly::Polynomial;
 use ecfft::ec::Curve;
-// use ecfft::m31::Fp;
-use ecfft::secp256k1::Fp;
+use ecfft::m31::Fp;
+// use ecfft::secp256k1::Fp;
 use ecfft::utils::div_rem;
 use ecfft::utils::gcd;
 use ecfft::utils::pow_mod;
@@ -15,10 +15,8 @@ use num_bigint::BigInt;
 use num_bigint::BigUint;
 use num_integer::ExtendedGcd;
 use num_integer::Integer;
-use std::collections::BTreeMap;
 use std::ops::Add;
 use std::ops::Mul;
-use std::ops::Range;
 
 fn main() {
     let curve = Curve::new(Fp::from(12328), Fp::from(273812783));
@@ -84,7 +82,6 @@ fn frobenius_trace_mod_l<F: PrimeField>(
     let p_mod_l = usize::try_from(&p % l).unwrap();
 
     if ring.modulus.degree() == 1 {
-        // println!("BOOM {l}");
         // Modulus is only made up of factors of the l-th division polynomial.
         // If modulus is a degree 1 polynomial i.e. (x - c) for some constant c
         // then we've found a roots of the l-th division polynomial equal to c.
@@ -107,7 +104,7 @@ fn frobenius_trace_mod_l<F: PrimeField>(
     // * the x-coord transform: a_1(a_2(x))
     // * the y-coord transform: b_1(x') * y' (where x' = a_2(x) and y' = b_2(x)*y)
     let pi_a = ring.pow(&x, p.clone());
-    let pi_b = ring.pow(&x3_ax_b, (p.clone() - 1u8) / 2u8);
+    let pi_b = ring.pow(&x3_ax_b, (p - 1u8) / 2u8);
     let pi = Endomorphism::new(pi_a, pi_b, curve, ring);
     let pi_pi = pi.clone() * pi.clone();
 
@@ -238,6 +235,7 @@ impl<F: PrimeField> Mul<Self> for Endomorphism<'_, F> {
 impl<F: PrimeField> Add for Endomorphism<'_, F> {
     type Output = Result<Self, Uninvertable<F>>;
 
+    /// Applies elliptic curve addition operation to endomorphisms
     fn add(self, rhs: Self) -> Self::Output {
         assert_eq!(self.ring, rhs.ring);
         assert_eq!(self.curve, rhs.curve);

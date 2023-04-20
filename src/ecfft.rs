@@ -1,10 +1,14 @@
 use crate::ec::Isogeny;
 use crate::ec::Point;
+use crate::utils::lagrange_interpolate;
 use crate::utils::BinaryTree;
 use crate::utils::Mat2x2;
 use ark_ff::batch_inversion;
 use ark_ff::PrimeField;
 use ark_ff::Zero;
+use ark_poly::univariate::DenseOrSparsePolynomial;
+use ark_poly::univariate::DensePolynomial;
+use ark_poly::DenseUVPolynomial;
 use ark_poly::Polynomial;
 use ark_serialize::CanonicalDeserialize;
 use ark_serialize::CanonicalSerialize;
@@ -17,13 +21,6 @@ use std::iter::zip;
 pub enum Moiety {
     S0 = 0,
     S1 = 1,
-}
-
-struct FFTreeLayer<'a, F: PrimeField> {
-    pub _l: &'a [F],
-    pub _isogeny: &'a Isogeny<F>,
-    pub decomp_matrices: &'a [Mat2x2<F>],
-    pub recomp_matrices: &'a [Mat2x2<F>],
 }
 
 // TODO: consider:
@@ -42,12 +39,13 @@ pub struct FFTree<F: PrimeField> {
     decomp_matrices: BinaryTree<Mat2x2<F>>,
     isogenies: Vec<Isogeny<F>>,
     subtree: Option<Box<Self>>,
-    xnn_s: Vec<F>,         // = <X^(n/2) ≀ S>
-    xnn_s_inv: Vec<F>,     // = <1/X^(n/2) ≀ S>
-    pub z0_s1: Vec<F>,     // = <Z_0 ≀ S_1>
-    pub z1_s0: Vec<F>,     // = <Z_1 ≀ S_0>
-    pub z0_s1_inv: Vec<F>, // = <1/Z_0 ≀ S_1>
-    pub z1_s0_inv: Vec<F>, // = <1/Z_1 ≀ S_0>
+    xnn_s: Vec<F>,              // = <X^(n/2) ≀ S>
+    xnn_s_inv: Vec<F>,          // = <1/X^(n/2) ≀ S>
+    pub z0_s1: Vec<F>,          // = <Z_0 ≀ S_1>
+    pub z1_s0: Vec<F>,          // = <Z_1 ≀ S_0>
+    pub z0_inv_s1: Vec<F>,      // = <1/Z_0 ≀ S_1>
+    pub z1_inv_s0: Vec<F>,      // = <1/Z_1 ≀ S_0>
+    pub z0z0_rem_xnn_s: Vec<F>, // = <Z_0^2 mod X^(n/2) ≀ S>
 }
 
 impl<F: PrimeField> FFTree<F> {
@@ -115,15 +113,14 @@ impl<F: PrimeField> FFTree<F> {
             return evals.to_vec();
         }
 
-        let i = self.f.num_layers() - 2 - n.ilog2();
-        let layer = self.get_layer(i as usize);
-        // layer.recomp_matrices.
+        let layer = (self.f.num_layers() - 2 - n.ilog2()) as usize;
 
         // π_0 and π_1
         let mut evals0 = vec![F::zero(); n / 2];
         let mut evals1 = vec![F::zero(); n / 2];
-        for (i, m) in layer
+        for (i, m) in self
             .recomp_matrices
+            .get_layer(layer)
             .iter()
             .skip(1 - moiety as usize)
             .step_by(2)
@@ -139,8 +136,9 @@ impl<F: PrimeField> FFTree<F> {
         let evals1_prime = self.extend_impl(&evals1, moiety);
 
         let mut res = vec![F::zero(); n];
-        for (i, m) in layer
+        for (i, m) in self
             .decomp_matrices
+            .get_layer(layer)
             .iter()
             .skip(moiety as usize)
             .step_by(2)
@@ -217,7 +215,7 @@ impl<F: PrimeField> FFTree<F> {
 
         // compute <(π-g)/Z_0 ≀ S1>
         // isolate the evaluations of the coefficients on the RHS
-        let t1: Vec<F> = zip(zip(e1, g1), &self.z0_s1_inv)
+        let t1: Vec<F> = zip(zip(e1, g1), &self.z0_inv_s1)
             .map(|((e1, g1), z0_inv)| (e1 - g1) * z0_inv)
             .collect();
         let t0 = self.extend_impl(&t1, Moiety::S0);
@@ -236,13 +234,11 @@ impl<F: PrimeField> FFTree<F> {
             return evals.to_vec();
         }
 
-        println!("d{}", evals.len());
         let u0: Vec<F> = self
-            .modular_reduce_impl(evals, &self.xnn_s)
+            .modular_reduce_impl(evals, &self.xnn_s, &self.z0z0_rem_xnn_s)
             .array_chunks()
             .map(|[u0, _]| *u0)
             .collect();
-        println!("u{}", u0.len());
 
         let subtree = self.subtree().unwrap();
         let mut a = subtree.exit_impl(&u0);
@@ -254,7 +250,6 @@ impl<F: PrimeField> FFTree<F> {
             .collect();
         let mut b = subtree.exit_impl(&v0);
 
-        println!("{} {}", a.len(), b.len());
         a.append(&mut b);
         a
     }
@@ -273,7 +268,7 @@ impl<F: PrimeField> FFTree<F> {
         let t0: Vec<F> = zip(e0, a0_inv).map(|(e0, a0_inv)| e0 * a0_inv).collect();
         let g1 = self.extend_impl(&t0, Moiety::S1);
         // compute <(π - a*g)/Z_0 ≀ S1>
-        let h1: Vec<F> = zip(zip(e1, g1), zip(a1, &self.z0_s1_inv))
+        let h1: Vec<F> = zip(zip(e1, g1), zip(a1, &self.z0_inv_s1))
             .map(|((e1, g1), (a1, z0_inv))| (e1 - g1 * a1) * z0_inv)
             .collect();
         let h0 = self.extend_impl(&h1, Moiety::S0);
@@ -298,7 +293,7 @@ impl<F: PrimeField> FFTree<F> {
         let t1: Vec<F> = zip(e1, a1_inv).map(|(e1, a1_inv)| e1 * a1_inv).collect();
         let g0 = self.extend_impl(&t1, Moiety::S0);
         // compute <(π - a*g)/Z_1 ≀ S1>
-        let h0: Vec<F> = zip(zip(e0, g0), zip(a0, &self.z1_s0_inv))
+        let h0: Vec<F> = zip(zip(e0, g0), zip(a0, &self.z1_inv_s0))
             .map(|((e0, g0), (a0, z1_inv))| (e0 - g0 * a0) * z1_inv)
             .collect();
         let h1 = self.extend_impl(&h0, Moiety::S1);
@@ -314,102 +309,18 @@ impl<F: PrimeField> FFTree<F> {
         tree.redc_z1_impl(evals, a)
     }
 
-    fn modular_reduce_impl(&self, evals: &[F], a: &[F]) -> Vec<F> {
-        // TODO: precompute. surely a better way to calculate C(X) = Z0(X)^2 rem A(X)
-
-        // let z0z0: Vec<F> = self.z0_s1.iter().flat_map(|&y| [F::zero(), y]).collect();
-        let z0: Vec<F> = self.z0_s1.iter().flat_map(|y| [F::zero(), *y]).collect();
-        let z0_inv_z1_mod_a = self.redc_z1_impl(&z0, a);
-        // println!("z000000: {:?}", z0_inv_z1_mod_a);
-
-        let z1: Vec<F> = self.z1_s0.iter().flat_map(|y| [*y, F::zero()]).collect();
-        let z1_inv_z0_mod_a = self.redc_z0_impl(&z1, a);
-
-        println!(
-            "{:?}",
-            zip(z0_inv_z1_mod_a, z1_inv_z0_mod_a)
-                .map(|(a, b)| a + b)
-                .collect::<Vec<F>>(),
-        );
-
-        // println!("z111111: {:?}", z1_inv_z0_mod_a);
-        // println!(
-        //     "yo: {:?}",
-        //     zip(z0_inv_z1_mod_a, z1_inv_z0_mod_a)
-        //         .map(|(a, b)| a * b)
-        //         .collect::<Vec<F>>()
-        // );
-
-        // println!("tm[: {:?}", tmp);
-        // // let tmp: Vec<F> = zip(tmp, &self.z1_s0).map(|(v, z1)| v * z1).collect();
-        // println!("tm[: {:?}", tmp);
-        todo!()
-
-        // println!("REDC");
-        // // let zero = F::zero();
-        // // let z0_s_inv: Vec<F> = self
-        // //     .z0_s1_inv
-        // //     .iter()
-        // //     .flat_map(|&y| [zero, y.square().inverse().unwrap()])
-        // //     .collect();
-        // // let mut c = self.redc_impl(&z0_s_inv, a);
-        // // // batch_inversion(&mut c);
-        // // println!(
-        // //     "g: {:?}",
-        // //     self.z0_s1_inv
-        // //         .iter()
-        // //         .map(|v| v.inverse().unwrap())
-        // // //         .collect::<Vec<F>>()
-        // // // );
-        // // // println!("c: {:?}", c);
-        // // // println!("DEGREE: {}", self.degree_impl(&c));
-        // // let zero = F::zero();
-        // // let z0_s_inv: Vec<F> = self.z0_s1_inv.iter().flat_map(|&y| [zero,
-        // // y]).collect(); let mut c = self.redc_impl(&z0_s_inv, a);
-        // // // let mut c2 = self.redc_impl(&c, a);
-        // // // batch_inversion(&mut c);
-        // // println!("z0 original: {:?}", self.z0_s1_inv);
-        // // println!("g: {:?}", z0_s_inv);
-        // // println!("c: {:?}", c);
-        // // // println!("HERE: {:?}", )
-        // // // println!("c2: {:?}", c2);
-        // // println!("DEGREE: {}", self.degree_impl(&c));
-        // let z0z0_s: Vec<F> = self
-        //     .z0_s1_inv
-        //     .iter()
-        //     // .flat_map(|&y| [F::zero(), y.inverse().unwrap().pow([2])])
-        //     // .flat_map(|&y| [F::zero(), y.inverse().unwrap()])
-        //     .flat_map(|&y| [F::one(), F::one()])
-        //     .collect();
-
-        // // let c: Vec<F> = zip(&z0z0_s, a_inv).map(|(z, a)| *z *
-        // a).collect(); // println!("C: {:?}", c);
-        // // println!("C: {:?}", self.degree(&c));
-        // // println!("z0z0_s: {:?}", z0z0_s);
-        // // let s = self.f.get_layer(0);
-        // let c = self.redc_impl(&z0z0_s, a);
-        // let c = self.redc_impl(&c, a);
-        // let c = self.redc_impl(&c, a);
-        // println!("c: {:?}", c);
-        // // let c = self.redc_impl(&c, a);
-        // // println!("c: {:?}", c);
-        // // let (mut c0, _): (Vec<F>, Vec<F>) = c.chunks(2).map(|c| (c[0],
-        // // c[1])).unzip(); batch_inversion(&mut c0);
-        // // let c1 = self.extend_impl(&c0, Moiety::S1);
-        // // println!("a: {:?}, {:?}", c0, c1);
-
-        // // let h = self.redc_impl(evals, a);
-        // // println!("h len {}", h.len());
-        // // let hc: Vec<F> = zip(h, c).map(|(h, c)| h * c).collect();
-        // // self.redc_impl(&hc, a)
-        // println!("Up: {:?}", self.z0_s1_inv);
-
-        // todo!()
+    fn modular_reduce_impl(&self, evals: &[F], a: &[F], c: &[F]) -> Vec<F> {
+        let h = self.redc_z0_impl(evals, a);
+        let hc: Vec<F> = zip(h, c).map(|(h, c)| h * c).collect();
+        self.redc_z0_impl(&hc, a)
     }
 
-    pub fn modular_reduce(&self, evals: &[F], a: &[F]) -> Vec<F> {
+    /// Computes MOD algorithm
+    /// `a` must be a polynomial of degree at most n/2 having no zeroes in S_0
+    /// `c` must be the evaluation table <Z_0^2 mod a ≀ S>
+    pub fn modular_reduce(&self, evals: &[F], a: &[F], c: &[F]) -> Vec<F> {
         let tree = self.subtree_with_size(evals.len());
-        tree.modular_reduce_impl(evals, a)
+        tree.modular_reduce_impl(evals, a, c)
     }
 
     fn vanish_impl(&self, vanish_domain: &[F]) -> Vec<F> {
@@ -490,8 +401,9 @@ impl<F: PrimeField> FFTree<F> {
             xnn_s_inv,
             z0_s1: Vec::new(),
             z1_s0: Vec::new(),
-            z1_s0_inv: Vec::new(),
-            z0_s1_inv: Vec::new(),
+            z1_inv_s0: Vec::new(),
+            z0_inv_s1: Vec::new(),
+            z0z0_rem_xnn_s: Vec::new(),
         };
 
         // Precompute eval tables <Z_0 ≀ S_1> and <Z_1 ≀ S_0> using our partial FFTree
@@ -519,10 +431,32 @@ impl<F: PrimeField> FFTree<F> {
             Ordering::Less => {}
         }
 
-        tree.z0_s1_inv = tree.z0_s1.clone();
-        tree.z1_s0_inv = tree.z1_s0.clone();
-        batch_inversion(&mut tree.z0_s1_inv);
-        batch_inversion(&mut tree.z1_s0_inv);
+        tree.z0_inv_s1 = tree.z0_s1.clone();
+        tree.z1_inv_s0 = tree.z1_s0.clone();
+        batch_inversion(&mut tree.z0_inv_s1);
+        batch_inversion(&mut tree.z1_inv_s0);
+
+        {
+            // Compute z0z0_rem_xnn_s in O(n^2)
+            // TODO: surely a better way to calculate Z0(X)^2 rem A(X)
+            let z0_s = tree.z0_s1.iter().flat_map(|&z0_s1| [F::zero(), z0_s1]);
+            let z0_rem_xnn_s = zip(z0_s, &tree.xnn_s).map(|(z0, xnn)| z0 - xnn);
+            let z0z0 = z0_rem_xnn_s.map(|y| y * y).collect::<Vec<F>>();
+            let s = tree.f.get_layer(0);
+            let z0z0_coeffs = lagrange_interpolate(s, &z0z0);
+            let mut xnn_coeffs = vec![F::zero(); n / 2];
+            xnn_coeffs.push(F::one());
+            let xnn_coeffs = DensePolynomial::from_coefficients_vec(xnn_coeffs);
+            let z0z0_div_xnn = DenseOrSparsePolynomial::divide_with_q_and_r(
+                &z0z0_coeffs.into(),
+                &xnn_coeffs.into(),
+            );
+            let mut z0z0_rem_xnn_coeffs = z0z0_div_xnn.unwrap().1.coeffs;
+            while z0z0_rem_xnn_coeffs.len() < n {
+                z0z0_rem_xnn_coeffs.push(F::zero());
+            }
+            tree.z0z0_rem_xnn_s = tree.enter_impl(&z0z0_rem_xnn_coeffs);
+        }
 
         tree
     }
@@ -543,16 +477,6 @@ impl<F: PrimeField> FFTree<F> {
         }
 
         Some(Self::from_tree(f_prime, isogenies.to_vec()))
-    }
-
-    // TODO: remove
-    fn get_layer(&self, i: usize) -> FFTreeLayer<'_, F> {
-        FFTreeLayer {
-            _l: self.f.get_layer(i),
-            _isogeny: &self.isogenies[i],
-            decomp_matrices: self.decomp_matrices.get_layer(i),
-            recomp_matrices: self.recomp_matrices.get_layer(i),
-        }
     }
 
     pub(crate) fn subtree(&self) -> Option<&Self> {
@@ -598,8 +522,9 @@ impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
             xnn_s_inv,
             z0_s1,
             z1_s0,
-            z0_s1_inv,
-            z1_s0_inv,
+            z0_inv_s1,
+            z1_inv_s0,
+            z0z0_rem_xnn_s,
             subtree,
         } = self;
         f.serialize_with_mode(&mut writer, compress)?;
@@ -612,9 +537,10 @@ impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
         if compress == ark_serialize::Compress::No {
             // Inverses are the cheapest to regenerate (1 mul per element)
             xnn_s_inv.serialize_with_mode(&mut writer, compress)?;
-            z0_s1_inv.serialize_with_mode(&mut writer, compress)?;
-            z1_s0_inv.serialize_with_mode(&mut writer, compress)?;
+            z0_inv_s1.serialize_with_mode(&mut writer, compress)?;
+            z1_inv_s0.serialize_with_mode(&mut writer, compress)?;
         }
+        z0z0_rem_xnn_s.serialize_with_mode(&mut writer, compress)?;
         // TODO: get "error[E0275]: overflow evaluating the requirement" for:
         // subtree.as_ref().map(Box::as_ref).serialize_with_mode(...)
         (subtree.is_some()).serialize_with_mode(&mut writer, compress)?;
@@ -635,8 +561,9 @@ impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
             xnn_s_inv,
             z0_s1,
             z1_s0,
-            z0_s1_inv,
-            z1_s0_inv,
+            z0_inv_s1,
+            z1_inv_s0,
+            z0z0_rem_xnn_s,
             subtree,
         } = self;
         let mut size = f.serialized_size(compress)
@@ -646,12 +573,13 @@ impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
             + xnn_s.serialized_size(compress)
             + z0_s1.serialized_size(compress)
             + z1_s0.serialized_size(compress)
+            + z0z0_rem_xnn_s.serialized_size(compress)
             // subtree: 1 (for Option state) + subtree size
             + 1 + subtree.as_ref().map_or(0, |v| v.as_ref().serialized_size(compress));
         if compress == Compress::No {
             size += xnn_s_inv.serialized_size(compress)
-                + z0_s1_inv.serialized_size(compress)
-                + z1_s0_inv.serialized_size(compress);
+                + z0_inv_s1.serialized_size(compress)
+                + z1_inv_s0.serialized_size(compress);
         }
         size
     }
@@ -680,23 +608,24 @@ impl<F: PrimeField> CanonicalDeserialize for FFTree<F> {
         let z0_s1 = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
         let z1_s0 = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
         let mut xnn_s_inv: Vec<F>;
-        let mut z0_s1_inv: Vec<F>;
-        let mut z1_s0_inv: Vec<F>;
+        let mut z0_inv_s1: Vec<F>;
+        let mut z1_inv_s0: Vec<F>;
         match compress {
             Compress::Yes => {
                 xnn_s_inv = xnn_s.clone();
-                z0_s1_inv = z0_s1.clone();
-                z1_s0_inv = z1_s0.clone();
+                z0_inv_s1 = z0_s1.clone();
+                z1_inv_s0 = z1_s0.clone();
                 batch_inversion(&mut xnn_s_inv);
-                batch_inversion(&mut z0_s1_inv);
-                batch_inversion(&mut z1_s0_inv);
+                batch_inversion(&mut z0_inv_s1);
+                batch_inversion(&mut z1_inv_s0);
             }
             Compress::No => {
                 xnn_s_inv = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
-                z0_s1_inv = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
-                z1_s0_inv = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
+                z0_inv_s1 = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
+                z1_inv_s0 = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
             }
         }
+        let z0z0_rem_xnn_s = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
         let subtree = if bool::deserialize_with_mode(&mut reader, compress, validate)? {
             Some(Box::new(Self::deserialize_with_mode(
                 reader, compress, validate,
@@ -714,8 +643,9 @@ impl<F: PrimeField> CanonicalDeserialize for FFTree<F> {
             xnn_s_inv,
             z0_s1,
             z1_s0,
-            z0_s1_inv,
-            z1_s0_inv,
+            z0_inv_s1,
+            z1_inv_s0,
+            z0z0_rem_xnn_s,
         })
     }
 }

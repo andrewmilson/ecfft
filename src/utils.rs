@@ -11,6 +11,7 @@ use num_bigint::BigUint;
 use num_integer::Integer;
 use rand::Rng;
 use std::collections::BTreeMap;
+use std::iter::zip;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::ops::Mul;
@@ -221,6 +222,24 @@ fn rand_poly<F: PrimeField, R: Rng>(d: Degree, rng: &mut R) -> DensePolynomial<F
     DensePolynomial::from_coefficients_vec((0..=d).map(|_| F::rand(rng)).collect())
 }
 
+pub fn lagrange_interpolate<F: Field>(xs: &[F], ys: &[F]) -> DensePolynomial<F> {
+    let x = DensePolynomial::from_coefficients_vec(vec![F::zero(), F::one()]);
+    let mut acc = DensePolynomial::zero();
+    for (i, (&xi, &yi)) in zip(xs, ys).enumerate() {
+        let mut prod = DensePolynomial::from_coefficients_vec(vec![yi]);
+        for (j, (&xj, _)) in zip(xs, ys).enumerate() {
+            if i != j {
+                prod = prod.naive_mul(
+                    &(&(&x - &DensePolynomial::from_coefficients_vec(vec![xj]))
+                        * (xi - xj).inverse().unwrap()),
+                );
+            }
+        }
+        acc = acc + prod;
+    }
+    acc
+}
+
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct BinaryTree<T: CanonicalSerialize + CanonicalDeserialize>(Vec<T>);
 
@@ -386,11 +405,11 @@ mod tests {
         let a = DensePolynomial::from_coefficients_vec(vec![-Fp::one(), Fp::zero(), Fp::one()]);
         let b = DensePolynomial::from_coefficients_vec(vec![Fp::one(), Fp::one(), Fp::one()]);
 
-        let (x, y, gcd) = xgcd(&a, &b);
+        let (s, t, gcd) = xgcd(&a, &b);
 
-        let ax = a.naive_mul(&x);
-        let by = b.naive_mul(&y);
-        assert_eq!(&ax + &by, gcd);
+        let a_s = a.naive_mul(&s);
+        let b_t = b.naive_mul(&t);
+        assert_eq!(&a_s + &b_t, gcd);
         assert_eq!(&[Fp::one(), Fp::one()], &*gcd);
     }
 
@@ -398,13 +417,12 @@ mod tests {
     fn test_xgcd_with_zero_polynomial() {
         let mut rng = StdRng::seed_from_u64(0);
         let zero = DensePolynomial::<Fp>::zero();
-        let one = DensePolynomial::<Fp>::from_coefficients_vec(vec![Fp::one()]);
         let b = DensePolynomial::<Fp>::rand(5, &mut rng);
 
-        let (x, y, gcd) = xgcd(&zero, &b);
+        let (s, t, gcd) = xgcd(&zero, &b);
 
-        assert_eq!(x, zero, "x should be zero polynomial");
-        assert_eq!(b.naive_mul(&y), gcd);
+        assert_eq!(s, zero, "x should be zero polynomial");
+        assert_eq!(b.naive_mul(&t), gcd);
         assert!(!gcd.is_zero());
     }
 }
