@@ -1,14 +1,10 @@
 use crate::ec::Isogeny;
 use crate::ec::Point;
-use crate::utils::lagrange_interpolate;
 use crate::utils::BinaryTree;
 use crate::utils::Mat2x2;
 use ark_ff::batch_inversion;
 use ark_ff::PrimeField;
 use ark_ff::Zero;
-use ark_poly::univariate::DenseOrSparsePolynomial;
-use ark_poly::univariate::DensePolynomial;
-use ark_poly::DenseUVPolynomial;
 use ark_poly::Polynomial;
 use ark_serialize::CanonicalDeserialize;
 use ark_serialize::CanonicalSerialize;
@@ -272,8 +268,6 @@ impl<F: PrimeField> FFTree<F> {
         let h1: Vec<F> = zip(zip(e1, g1), zip(a1, &self.z0_inv_s1))
             .map(|((e1, g1), (a1, z0_inv))| (e1 - g1 * a1) * z0_inv)
             .collect();
-        println!("BRO: {}", evals.len());
-        println!("BRO: {:?}", self.z0_inv_s1);
         let h0 = self.extend_impl(&h1, Moiety::S0);
 
         zip(h0, h1).flat_map(|h| [h.0, h.1]).collect()
@@ -313,7 +307,6 @@ impl<F: PrimeField> FFTree<F> {
     }
 
     fn modular_reduce_impl(&self, evals: &[F], a: &[F], c: &[F]) -> Vec<F> {
-        println!("YE: {} {} {}", evals.len(), a.len(), c.len());
         let h = self.redc_z0_impl(evals, a);
         let hc: Vec<F> = zip(h, c).map(|(h, c)| h * c).collect();
         self.redc_z0_impl(&hc, a)

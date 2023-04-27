@@ -222,24 +222,6 @@ fn rand_poly<F: PrimeField, R: Rng>(d: Degree, rng: &mut R) -> DensePolynomial<F
     DensePolynomial::from_coefficients_vec((0..=d).map(|_| F::rand(rng)).collect())
 }
 
-pub fn lagrange_interpolate<F: Field>(xs: &[F], ys: &[F]) -> DensePolynomial<F> {
-    let x = DensePolynomial::from_coefficients_vec(vec![F::zero(), F::one()]);
-    let mut acc = DensePolynomial::zero();
-    for (i, (&xi, &yi)) in zip(xs, ys).enumerate() {
-        let mut prod = DensePolynomial::from_coefficients_vec(vec![yi]);
-        for (j, (&xj, _)) in zip(xs, ys).enumerate() {
-            if i != j {
-                prod = prod.naive_mul(
-                    &(&(&x - &DensePolynomial::from_coefficients_vec(vec![xj]))
-                        * (xi - xj).inverse().unwrap()),
-                );
-            }
-        }
-        acc = acc + prod;
-    }
-    acc
-}
-
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct BinaryTree<T: CanonicalSerialize + CanonicalDeserialize>(Vec<T>);
 
