@@ -1,13 +1,14 @@
 #![feature(array_chunks)]
 
 pub mod ec;
-pub mod ecfft;
-pub mod schoofs;
+pub mod fftree;
 pub mod utils;
 
 use ark_ff::PrimeField;
 use ec::Curve;
 use ec::Point;
+pub use fftree::FFTree;
+pub use fftree::Moiety;
 
 /// The interface for fields that are able to be used in ECFFTs.
 pub trait EcFftField: PrimeField {
@@ -25,7 +26,7 @@ pub trait EcFftField: PrimeField {
     /// Returns an FFTree that's capable of evaluating polynomials up
     /// to degree n-1. Returns None if no such FFTree for this config exists.
     /// Panics if n is not a power of two.
-    fn build_fftree(n: usize) -> Option<ecfft::FFTree<Self>> {
+    fn build_fftree(n: usize) -> Option<FFTree<Self>> {
         assert!(n.is_power_of_two());
         let log_n = n.ilog2();
         if log_n > Self::SUBGORUP_TWO_ADDICITY {
@@ -37,7 +38,7 @@ pub trait EcFftField: PrimeField {
             generator += generator;
         }
 
-        Some(ecfft::FFTree::new(Self::COSET_OFFSET, generator))
+        Some(FFTree::new(Self::COSET_OFFSET, generator))
     }
 }
 
@@ -85,8 +86,8 @@ pub mod secp256k1 {
     mod tests {
         use super::EcFftField;
         use super::Fp;
-        use crate::ecfft::FFTree;
-        use crate::ecfft::Moiety;
+        use crate::FFTree;
+        use crate::Moiety;
         use ark_poly::univariate::DensePolynomial;
         use ark_poly::DenseUVPolynomial;
         use ark_poly::Polynomial;
@@ -204,7 +205,7 @@ pub mod m31 {
     #[cfg(test)]
     mod tests {
         use super::Fp;
-        use crate::ecfft::FFTree;
+        use crate::fftree::FFTree;
         use crate::EcFftField;
         use ark_ff::One;
         use ark_ff::Zero;
@@ -266,11 +267,6 @@ pub mod m31 {
 
             let poly = DensePolynomial::from_coefficients_slice(coeffs);
             assert_eq!(poly.degree(), degree);
-        }
-
-        #[test]
-        fn testout() {
-            let fftree = get_fftree();
         }
     }
 }

@@ -11,7 +11,6 @@ use num_bigint::BigUint;
 use num_integer::Integer;
 use rand::Rng;
 use std::collections::BTreeMap;
-use std::iter::zip;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::ops::Mul;
