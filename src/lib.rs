@@ -267,5 +267,10 @@ pub mod m31 {
             let poly = DensePolynomial::from_coefficients_slice(coeffs);
             assert_eq!(poly.degree(), degree);
         }
+
+        #[test]
+        fn testout() {
+            let fftree = get_fftree();
+        }
     }
 }
