@@ -16,7 +16,7 @@ This library enables fast polynomial arithmetic over any prime field by implemen
 
 ## Build FFTrees at compile time
 
-FFTrees are the core datastructure that the ECFFT algorithms are built apon. FFTrees can be generated and serialized at compile time and then be deserialised and used at runtime. This can be preferable since generating FFTrees involves a significant amount of computation. While this approach improves runtime it will significantly blow up a binary's size. Generating a FFTree of capable of evaluating degree $n$ polynomials takes $\mathcal{O}(n\log^3{n})$ - the space complexity of this serialized FFTree is $\mathcal{O}(n)$.
+FFTrees are the core datastructure that the ECFFT algorithms are built apon. FFTrees can be generated and serialized at compile time and then be deserialised and used at runtime. This can be preferable since generating FFTrees involves a significant amount of computation. While this approach improves runtime it will significantly blow up a binary's size. Generating a FFTree of capable of evaluating/interpolating degree $n$ polynomials takes $\mathcal{O}(n\log^3{n})$ - the space complexity of this FFTree is $\mathcal{O}(n)$.
 
 ```rust
 // build.rs
