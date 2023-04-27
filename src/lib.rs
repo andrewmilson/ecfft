@@ -240,7 +240,7 @@ pub mod m31 {
             let fftree = get_fftree();
             let one = Fp::one();
             let zero = Fp::zero();
-            let coeffs: &[Fp] = &[one, one, one, zero, zero, one, zero, zero];
+            let coeffs: &[Fp] = &[one, one, Fp::from(5u8), zero, zero, one, zero, zero];
             let evals = fftree.enter(coeffs);
 
             let exit_coeffs = fftree.exit(&evals);
