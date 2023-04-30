@@ -3,11 +3,11 @@
 extern crate alloc;
 
 pub mod ec;
+pub mod errors;
 pub mod fftree;
 pub mod utils;
 
 use ark_ff::PrimeField;
-use ec::Curve;
 use ec::Point;
 pub use fftree::FFTree;
 pub use fftree::Moiety;
@@ -18,11 +18,11 @@ pub trait FftreeField: PrimeField {
 }
 
 pub mod secp256k1 {
-    use super::Curve;
     use super::FFTree;
     use super::FftreeField;
     use super::Point;
     use crate::ec::build_ec_fftree;
+    use crate::ec::GeneralWeierstrassCurve;
     use ark_ff::Fp256;
     use ark_ff::MontBackend;
     use ark_ff::MontConfig;
@@ -40,7 +40,10 @@ pub mod secp256k1 {
     impl FftreeField for Fp {
         fn build_fftree(n: usize) -> Option<FFTree<Self>> {
             /// Curve with 2^21 | #E
-            const CURVE: Curve<Fp> = Curve::new(
+            const CURVE: GeneralWeierstrassCurve<Fp> = GeneralWeierstrassCurve::new(
+                F!("0"),
+                F!("0"),
+                F!("0"),
                 F!("17748197196278671983710270881246356270498036375776972586378254349879758261964"),
                 F!("48180245521382520283744586749255972002017879486304201780206317812189781697357"),
             );
@@ -172,18 +175,18 @@ pub mod secp256k1 {
 }
 
 pub mod m31 {
-    use super::Curve;
     use super::FFTree;
     use super::FftreeField;
     use super::Point;
     use crate::ec::build_ec_fftree;
+    use crate::ec::GeneralWeierstrassCurve;
     pub use ark_ff_optimized::fp31::Fp;
-
-    /// Supersingular curve with 2^31 | #E
-    const CURVE: Curve<Fp> = Curve::new(Fp(1), Fp(0));
 
     impl FftreeField for Fp {
         fn build_fftree(n: usize) -> Option<FFTree<Fp>> {
+            /// Supersingular curve with 2^31 | #E
+            const CURVE: GeneralWeierstrassCurve<Fp> =
+                GeneralWeierstrassCurve::new(Fp(0), Fp(0), Fp(0), Fp(1), Fp(0));
             const COSET_OFFSET: Point<Fp> = Point::new(Fp(1048755163), Fp(279503108), CURVE);
             const SUBGROUP_GENERATOR: Point<Fp> = Point::new(Fp(1273083559), Fp(804329170), CURVE);
             const SUBGORUP_TWO_ADDICITY: u32 = 28;

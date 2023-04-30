@@ -4,7 +4,7 @@ use ark_ff::Zero;
 use ark_poly::univariate::DensePolynomial;
 use ark_poly::DenseUVPolynomial;
 use ark_poly::Polynomial;
-use ecfft::ec::Curve;
+use ecfft::ec::ShortWeierstrassCurve;
 use ecfft::m31::Fp;
 // use ecfft::secp256k1::Fp;
 use ecfft::utils::div_rem;
@@ -19,7 +19,7 @@ use std::ops::Add;
 use std::ops::Mul;
 
 fn main() {
-    let curve = Curve::new(Fp::from(8), Fp::from(81));
+    let curve = ShortWeierstrassCurve::new(Fp::from(8), Fp::from(81));
     println!("Cardinality is: {}", cardinality(curve));
 }
 
@@ -27,7 +27,7 @@ fn main() {
 /// Implementation based on Algorithm 4.5 from "Elliptic Curves" book by LCW and
 /// https://math.mit.edu/classes/18.783/2015/LectureNotes9.pdf.
 // TODO: fix bug. a=8, b=81 gives 2147478255 but should be 2147489041
-pub fn cardinality<F: PrimeField>(curve: Curve<F>) -> BigUint {
+pub fn cardinality<F: PrimeField>(curve: ShortWeierstrassCurve<F>) -> BigUint {
     let p = F::MODULUS.into();
     let hasse_interval_len = BigInt::from(p.sqrt() * 4u32);
     let mut small_primes = SMALL_PRIMES.into_iter();
@@ -75,7 +75,7 @@ pub fn cardinality<F: PrimeField>(curve: Curve<F>) -> BigUint {
 /// Panics if `l` is not an odd prime or if modulus has degree 0
 fn frobenius_trace_mod_l<F: PrimeField>(
     l: usize,
-    curve: Curve<F>,
+    curve: ShortWeierstrassCurve<F>,
     ring: &QuotientRing<F>,
 ) -> usize {
     assert!(l.is_odd(), "odd primes only");
@@ -143,7 +143,7 @@ fn frobenius_trace_mod_l<F: PrimeField>(
 struct Endomorphism<'a, F: PrimeField> {
     a: DensePolynomial<F>,
     b: DensePolynomial<F>,
-    curve: Curve<F>,
+    curve: ShortWeierstrassCurve<F>,
     ring: &'a QuotientRing<F>,
 }
 
@@ -151,7 +151,7 @@ impl<'a, F: PrimeField> Endomorphism<'a, F> {
     fn new(
         a: DensePolynomial<F>,
         b: DensePolynomial<F>,
-        curve: Curve<F>,
+        curve: ShortWeierstrassCurve<F>,
         ring: &'a QuotientRing<F>,
     ) -> Self {
         Self {
@@ -162,7 +162,7 @@ impl<'a, F: PrimeField> Endomorphism<'a, F> {
         }
     }
 
-    fn identity(curve: Curve<F>, ring: &'a QuotientRing<F>) -> Self {
+    fn identity(curve: ShortWeierstrassCurve<F>, ring: &'a QuotientRing<F>) -> Self {
         // TODO: identity endomorphism
         Self {
             a: DensePolynomial::from_coefficients_vec(vec![F::zero(), F::one()]),
@@ -342,7 +342,7 @@ impl<F: PrimeField> From<DensePolynomial<F>> for QuotientRing<F> {
 struct Uninvertable<F: PrimeField>(DensePolynomial<F>);
 
 /// Returns true if there is an even number of points on the curve.
-fn has_even_order<F: PrimeField>(curve: Curve<F>) -> bool {
+fn has_even_order<F: PrimeField>(curve: ShortWeierstrassCurve<F>) -> bool {
     // "if x^3 + A*x + B has a root e ∈ Fp, then (e, 0) ∈ E[2] and (e, 0) ∈ E(Fp),
     // so E(Fp) has even order ... if x^3 + A*x + B has no roots in Fp, then E(Fp)
     // has no points of order 2" - Elliptic Curves, LCW.
@@ -367,7 +367,10 @@ fn has_even_order<F: PrimeField>(curve: Curve<F>) -> bool {
 
 /// Returns the nth division polynomial
 /// The division polynomial for even values of n are missing a factor of 2y
-pub fn division_polynomial<F: PrimeField>(n: usize, curve: &Curve<F>) -> DensePolynomial<F> {
+pub fn division_polynomial<F: PrimeField>(
+    n: usize,
+    curve: &ShortWeierstrassCurve<F>,
+) -> DensePolynomial<F> {
     if n == 0 {
         // ψ_0 = 0
         DensePolynomial::default()
@@ -456,7 +459,7 @@ mod tests {
         let a = Fp::rand(&mut rng);
         let b = Fp::rand(&mut rng);
         let x3_ax_b = DensePolynomial::from_coefficients_vec(vec![b, a, Fp::zero(), Fp::one()]);
-        let curve = Curve::new(a, b);
+        let curve = ShortWeierstrassCurve::new(a, b);
         // println!("Roots: {:?}", utils::find_roots(&x3_ax_b));
     }
 }

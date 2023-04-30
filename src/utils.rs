@@ -48,7 +48,7 @@ pub fn find_roots<F: PrimeField>(poly: &DensePolynomial<F>) -> Vec<F> {
 ///
 /// The input must be a squarefree polynomial.
 /// https://en.wikipedia.org/wiki/Factorization_of_polynomials_over_finite_fields
-pub(crate) fn distinct_degree_factors<F: PrimeField>(
+pub(crate) fn distinct_degree_factors<F: Field>(
     f: &DensePolynomial<F>,
 ) -> BTreeMap<Degree, DensePolynomial<F>> {
     let x = DensePolynomial::from_coefficients_slice(&[F::zero(), F::one()]);
@@ -114,7 +114,7 @@ fn equal_degree_factorization<F: PrimeField>(
 /// Returns the polynomial's square free factorization.
 /// https://mathrefresher.blogspot.com/2009/01/greatest-common-divisor-of-polynomial.html
 /// https://en.wikipedia.org/wiki/Factorization_of_polynomials_over_finite_fields
-pub(crate) fn square_free_factors<F: PrimeField>(f: &DensePolynomial<F>) -> DensePolynomial<F> {
+pub(crate) fn square_free_factors<F: Field>(f: &DensePolynomial<F>) -> DensePolynomial<F> {
     let f_prime = derivative(f);
     if f_prime.is_zero() {
         // f is already square free
@@ -128,7 +128,7 @@ pub(crate) fn square_free_factors<F: PrimeField>(f: &DensePolynomial<F>) -> Dens
 /// Returns the GCD of two polynomials.
 /// The GCD is normalized to a monic polynomial.
 /// https://math.stackexchange.com/a/3009888/393151
-pub fn gcd<F: PrimeField>(a: &DensePolynomial<F>, b: &DensePolynomial<F>) -> DensePolynomial<F> {
+pub fn gcd<F: Field>(a: &DensePolynomial<F>, b: &DensePolynomial<F>) -> DensePolynomial<F> {
     if a.is_zero() {
         DensePolynomial::zero()
     } else if b.is_zero() {
@@ -181,7 +181,7 @@ pub fn xgcd<F: PrimeField>(
 }
 
 /// Returns numerator % denominator
-pub fn div_rem<F: PrimeField>(
+pub fn div_rem<F: Field>(
     numerator: &DensePolynomial<F>,
     denominator: &DensePolynomial<F>,
 ) -> DensePolynomial<F> {
@@ -191,7 +191,7 @@ pub fn div_rem<F: PrimeField>(
 }
 
 /// Calculates (a^exp) % modulus
-pub fn pow_mod<F: PrimeField>(
+pub fn pow_mod<F: Field>(
     a: &DensePolynomial<F>,
     mut exp: BigUint,
     modulus: &DensePolynomial<F>,
@@ -210,7 +210,7 @@ pub fn pow_mod<F: PrimeField>(
 }
 
 /// Calculates and returns the derivative f' of f
-fn derivative<F: PrimeField>(f: &DensePolynomial<F>) -> DensePolynomial<F> {
+fn derivative<F: Field>(f: &DensePolynomial<F>) -> DensePolynomial<F> {
     DensePolynomial::from_coefficients_vec(
         f.iter()
             .enumerate()
@@ -220,7 +220,7 @@ fn derivative<F: PrimeField>(f: &DensePolynomial<F>) -> DensePolynomial<F> {
     )
 }
 
-fn rand_poly<F: PrimeField, R: Rng>(d: Degree, rng: &mut R) -> DensePolynomial<F> {
+fn rand_poly<F: Field, R: Rng>(d: Degree, rng: &mut R) -> DensePolynomial<F> {
     DensePolynomial::from_coefficients_vec((0..=d).map(|_| F::rand(rng)).collect())
 }
 

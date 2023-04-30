@@ -5,7 +5,6 @@ use ark_ff::batch_inversion;
 use ark_ff::vec;
 use ark_ff::vec::Vec;
 use ark_ff::Field;
-use ark_ff::PrimeField;
 use ark_poly::univariate::DensePolynomial;
 use ark_poly::Polynomial;
 use ark_serialize::CanonicalDeserialize;
@@ -21,7 +20,7 @@ pub struct RationalMap<F: Field> {
     pub denominator_map: DensePolynomial<F>,
 }
 
-impl<F: PrimeField> RationalMap<F> {
+impl<F: Field> RationalMap<F> {
     pub fn map(&self, x: &F) -> Option<F> {
         Some(self.numerator_map.evaluate(x) * self.denominator_map.evaluate(x).inverse()?)
     }
@@ -50,7 +49,7 @@ pub struct FFTree<F: Field> {
     pub z1z1_rem_xnn_s: Vec<F>, // = <Z_0^2 mod X^(n/2) ≀ S>
 }
 
-impl<F: PrimeField> FFTree<F> {
+impl<F: Field> FFTree<F> {
     pub fn new(leaves: Vec<F>, rational_maps: Vec<RationalMap<F>>) -> Self {
         let n = leaves.len();
         assert!(n.is_power_of_two());
@@ -520,7 +519,7 @@ impl<F: PrimeField> FFTree<F> {
 }
 
 #[cfg(test)]
-impl<F: PrimeField> FFTree<F> {
+impl<F: Field> FFTree<F> {
     // TODO: maybe convert to method to get subtree of size n?
     // this could be used to simplify public algorithm interfaces on FFTree as well
     pub(crate) fn eval_domain(&self) -> &[F] {
@@ -531,7 +530,7 @@ impl<F: PrimeField> FFTree<F> {
 // TODO: implement CanonicalSerialize for Box in arkworks
 // TODO: Derive bug "error[E0275]" with recursive field subtree
 // TODO: add compress version (with flags perhaps)
-impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
+impl<F: Field> CanonicalSerialize for FFTree<F> {
     fn serialize_with_mode<W: ark_serialize::Write>(
         &self,
         mut writer: W,
@@ -614,7 +613,7 @@ impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
     }
 }
 
-impl<F: PrimeField> Valid for FFTree<F> {
+impl<F: Field> Valid for FFTree<F> {
     #[inline]
     fn check(&self) -> Result<(), ark_serialize::SerializationError> {
         Ok(())
@@ -623,7 +622,7 @@ impl<F: PrimeField> Valid for FFTree<F> {
 
 // TODO: implement CanonicalDeserialize for Box in arkworks
 // TODO: Derive bug "error[E0275]" with recursive field subtree
-impl<F: PrimeField> CanonicalDeserialize for FFTree<F> {
+impl<F: Field> CanonicalDeserialize for FFTree<F> {
     fn deserialize_with_mode<R: ark_serialize::Read>(
         mut reader: R,
         compress: ark_serialize::Compress,
