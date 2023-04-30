@@ -22,7 +22,7 @@ FFTrees are the core datastructure that the ECFFT algorithms are built apon. FFT
 // build.rs
 
 use ark_serialize::CanonicalSerialize;
-use ecfft::{secp256k1::Fp, EcFftField};
+use ecfft::{secp256k1::Fp, FftreeField};
 use std::{env, fs::File, io, path::Path};
 
 fn main() -> io::Result<()> {

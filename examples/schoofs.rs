@@ -19,13 +19,14 @@ use std::ops::Add;
 use std::ops::Mul;
 
 fn main() {
-    let curve = Curve::new(Fp::from(12328), Fp::from(273812783));
+    let curve = Curve::new(Fp::from(8), Fp::from(81));
     println!("Cardinality is: {}", cardinality(curve));
 }
 
 /// Returns the cardinality of a curve using Schoofs Algorithm
 /// Implementation based on Algorithm 4.5 from "Elliptic Curves" book by LCW and
 /// https://math.mit.edu/classes/18.783/2015/LectureNotes9.pdf.
+// TODO: fix bug. a=8, b=81 gives 2147478255 but should be 2147489041
 pub fn cardinality<F: PrimeField>(curve: Curve<F>) -> BigUint {
     let p = F::MODULUS.into();
     let hasse_interval_len = BigInt::from(p.sqrt() * 4u32);
@@ -37,6 +38,7 @@ pub fn cardinality<F: PrimeField>(curve: Curve<F>) -> BigUint {
         let a_mod_l = if l == 2 {
             // p + 1 + a ≡ 0 (mod 2) then a = 0 (mod 2) otherwise a = 1 (mod 2)
             if has_even_order(curve) {
+                println!("is true");
                 0
             } else {
                 1

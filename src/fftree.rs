@@ -1,17 +1,31 @@
-use crate::ec::Isogeny;
-use crate::ec::Point;
 use crate::utils::BinaryTree;
 use crate::utils::Mat2x2;
+use alloc::boxed::Box;
 use ark_ff::batch_inversion;
+use ark_ff::vec;
+use ark_ff::vec::Vec;
+use ark_ff::Field;
 use ark_ff::PrimeField;
-use ark_ff::Zero;
+use ark_poly::univariate::DensePolynomial;
 use ark_poly::Polynomial;
 use ark_serialize::CanonicalDeserialize;
 use ark_serialize::CanonicalSerialize;
 use ark_serialize::Compress;
 use ark_serialize::Valid;
-use std::cmp::Ordering;
-use std::iter::zip;
+use core::cmp::Ordering;
+use core::iter::zip;
+
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
+pub struct RationalMap<F: Field> {
+    pub numerator_map: DensePolynomial<F>,
+    pub denominator_map: DensePolynomial<F>,
+}
+
+impl<F: PrimeField> RationalMap<F> {
+    pub fn map(&self, x: &F) -> Option<F> {
+        Some(self.numerator_map.evaluate(x) * self.denominator_map.evaluate(x).inverse()?)
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum Moiety {
@@ -19,22 +33,13 @@ pub enum Moiety {
     S1 = 1,
 }
 
-// TODO: consider:
-// pub enum Capability {
-//     ExtendS0,
-//     ExtendS1,
-//     Enter,
-//     Exit,
-//     Degree,
-// }
-
 #[derive(Clone, Debug)]
-pub struct FFTree<F: PrimeField> {
+pub struct FFTree<F: Field> {
     pub f: BinaryTree<F>,
-    recomp_matrices: BinaryTree<Mat2x2<F>>,
-    decomp_matrices: BinaryTree<Mat2x2<F>>,
-    isogenies: Vec<Isogeny<F>>,
-    subtree: Option<Box<Self>>,
+    pub recombine_matrices: BinaryTree<Mat2x2<F>>,
+    pub decompose_matrices: BinaryTree<Mat2x2<F>>,
+    pub rational_maps: Vec<RationalMap<F>>,
+    pub subtree: Option<Box<Self>>,
     pub xnn_s: Vec<F>,          // = <X^(n/2) ≀ S>
     pub xnn_s_inv: Vec<F>,      // = <1/X^(n/2) ≀ S>
     pub z0_s1: Vec<F>,          // = <Z_0 ≀ S_1>
@@ -46,49 +51,21 @@ pub struct FFTree<F: PrimeField> {
 }
 
 impl<F: PrimeField> FFTree<F> {
-    pub fn new(coset_offset: Point<F>, generator: Point<F>) -> Self {
-        assert_ne!(coset_offset, generator);
-        assert_eq!(coset_offset.curve, generator.curve);
-        let log_n = two_adicity(generator).expect("generator must have order 2^k");
-        assert!(log_n < 32, "generator has unsupported two adicity");
+    pub fn new(leaves: Vec<F>, rational_maps: Vec<RationalMap<F>>) -> Self {
+        let n = leaves.len();
+        assert!(n.is_power_of_two());
+        let log_n = n.ilog2();
+        assert_eq!(log_n, rational_maps.len() as u32);
         let n = 1 << log_n;
-
-        let mut l = vec![F::zero(); n];
-        let mut acc = Point::zero();
-        for x in &mut l {
-            *x = (coset_offset + acc).x;
-            acc += generator;
-        }
-
-        let mut isogenies = Vec::new();
-        let mut g = generator;
-        for _ in 0..log_n {
-            let isogeny = g
-                .curve
-                .unwrap()
-                .two_isogenies()
-                .into_iter()
-                .find_map(|isogeny| {
-                    let g_prime = isogeny.map(&g);
-                    if two_adicity(g_prime)? == two_adicity(g)? - 1 {
-                        g = g_prime;
-                        Some(isogeny)
-                    } else {
-                        None
-                    }
-                })
-                .expect("cannot find a suitable isogeny");
-            isogenies.push(isogeny);
-        }
 
         // copy leaf nodes
         let mut f = BinaryTree::from(vec![F::zero(); 2 * n]);
-        f[n..].copy_from_slice(&l);
+        f[n..].copy_from_slice(&leaves);
 
         // generate internal nodes
         // TODO: use array_windows_mut
         let mut f_layers = f.get_layers_mut();
-        for (i, isogeny) in isogenies.iter().enumerate() {
+        for (i, rational_map) in rational_maps.iter().enumerate() {
             let (prev_layer, layer) = {
                 let (prev_layers, layers) = f_layers.split_at_mut(i + 1);
                 (prev_layers.last_mut().unwrap(), layers.first_mut().unwrap())
@@ -96,13 +73,23 @@ impl<F: PrimeField> FFTree<F> {
 
             let layer_size = layer.len();
             for (i, s) in layer.iter_mut().enumerate() {
-                *s = isogeny.map_x(&prev_layer[i]).unwrap();
-                debug_assert_eq!(*s, isogeny.map_x(&prev_layer[i + layer_size]).unwrap());
+                *s = rational_map.map(&prev_layer[i]).unwrap();
+                debug_assert_eq!(*s, rational_map.map(&prev_layer[i + layer_size]).unwrap());
             }
         }
 
-        Self::from_tree(f, isogenies)
+        Self::from_tree(f, rational_maps)
     }
+
+    /// Decomposes evaluation table <P(X) ≀ S> into <P_0(X) ≀ T> and
+    /// <P_1(X) ≀ T> where T = ψ(S), ψ(X) = u(X)/v(X) and
+    /// P(s) = (P_0(ψ(s)) + s * P_1(ψ(s))) * v(s)^(d/2 - 1)
+    // pub fn decompose(&self, evals: &[F], moiety: Moiety) -> (Vec<F>, Vec<F>) {}
+
+    // /// Recombines evaluation tables <P_0(X) ≀ T> and <P_1(X) ≀ T> to produce
+    // /// <P(X) ≀ S> where ψ(X) = u(X)/v(X), T = ψ(S) and
+    // /// P(s) = (P_0(ψ(s)) + s * P_1(ψ(s)) * v(s)^(d/2 - 1)
+    // fn recombine(&self) -> (Vec<F>, Vec<F>) {}
 
     fn extend_impl(&self, evals: &[F], moiety: Moiety) -> Vec<F> {
         let n = evals.len();
@@ -116,16 +103,16 @@ impl<F: PrimeField> FFTree<F> {
         let mut evals0 = vec![F::zero(); n / 2];
         let mut evals1 = vec![F::zero(); n / 2];
         for (i, m) in self
-            .recomp_matrices
+            .decompose_matrices
             .get_layer(layer)
             .iter()
             .skip(1 - moiety as usize)
             .step_by(2)
             .enumerate()
         {
-            let v = m * &[evals[i], evals[i + n / 2]];
-            evals0[i] = v[0];
-            evals1[i] = v[1];
+            let [v0, v1] = m * &[evals[i], evals[i + n / 2]];
+            evals0[i] = v0;
+            evals1[i] = v1;
         }
 
         // π_0' and π_1'
@@ -134,16 +121,16 @@ impl<F: PrimeField> FFTree<F> {
 
         let mut res = vec![F::zero(); n];
         for (i, m) in self
-            .decomp_matrices
+            .recombine_matrices
             .get_layer(layer)
             .iter()
             .skip(moiety as usize)
             .step_by(2)
             .enumerate()
         {
-            let v = m * &[evals0_prime[i], evals1_prime[i]];
-            res[i] = v[0];
-            res[i + n / 2] = v[1];
+            let [v0, v1] = m * &[evals0_prime[i], evals1_prime[i]];
+            res[i] = v0;
+            res[i + n / 2] = v1;
         }
         res
     }
@@ -203,8 +190,8 @@ impl<F: PrimeField> FFTree<F> {
         let subtree = self.subtree().unwrap();
         let (e0, e1): (Vec<F>, Vec<F>) = evals.chunks(2).map(|e| (e[0], e[1])).unzip();
 
-        // The intuition is that if degree < n / 2 then all coefficients on the RHS
-        // will be 0. Therefore if degree < n / 2 then e1 == extend(e0)
+        // The intuition is that if `degree < n/2` then all coefficients on the RHS
+        // will be 0. Therefore if `degree < n/2` then e1 == extend(e0)
         let g1 = self.extend_impl(&e0, Moiety::S1);
         if g1 == e1 {
             return subtree.degree_impl(&e0);
@@ -347,8 +334,8 @@ impl<F: PrimeField> FFTree<F> {
         tree.vanish_impl(vanish_domain)
     }
 
-    fn from_tree(f: BinaryTree<F>, isogenies: Vec<Isogeny<F>>) -> Self {
-        let subtree = Self::derive_subtree(&f, &isogenies).map(Box::new);
+    fn from_tree(f: BinaryTree<F>, rational_maps: Vec<RationalMap<F>>) -> Self {
+        let subtree = Self::derive_subtree(&f, &rational_maps).map(Box::new);
         let f_layers = f.get_layers();
         let n = f.leaves().len();
         let nn = n as u64 / 2;
@@ -370,34 +357,35 @@ impl<F: PrimeField> FFTree<F> {
         // Generate polynomial decomposition matrices
         // Lemma 3.2 (M_t) https://arxiv.org/abs/2107.08473
         // TODO: change notation
-        let mut recomp_matrices = BinaryTree::from(vec![Mat2x2::identity(); n]);
-        let mut decomp_matrices = BinaryTree::from(vec![Mat2x2::identity(); n]);
-        let recomp_layers = recomp_matrices.get_layers_mut();
-        let decomp_layers = decomp_matrices.get_layers_mut();
-        for ((recomp_layer, decomp_layer), (l, iso)) in
-            zip(zip(recomp_layers, decomp_layers), zip(f_layers, &isogenies))
-        {
+        let mut recombine_matrices = BinaryTree::from(vec![Mat2x2::identity(); n]);
+        let mut decompose_matrices = BinaryTree::from(vec![Mat2x2::identity(); n]);
+        let recombine_layers = recombine_matrices.get_layers_mut();
+        let decompose_layers = decompose_matrices.get_layers_mut();
+        for ((recombine_layer, decompose_layer), (l, map)) in zip(
+            zip(recombine_layers, decompose_layers),
+            zip(f_layers, &rational_maps),
+        ) {
             let d = l.len() / 2;
             if d == 1 {
                 continue;
             }
 
-            let v = &iso.x_denominator_map;
-            for (i, (rmat, dmat)) in zip(recomp_layer, decomp_layer).enumerate() {
+            let v = &map.denominator_map;
+            for (i, (rmat, dmat)) in zip(recombine_layer, decompose_layer).enumerate() {
                 let s0 = l[i];
                 let s1 = l[i + d];
                 let v0 = v.evaluate(&s0).pow([(d / 2 - 1) as u64]);
                 let v1 = v.evaluate(&s1).pow([(d / 2 - 1) as u64]);
-                *dmat = Mat2x2([[v0, s0 * v0], [v1, s1 * v1]]);
-                *rmat = dmat.inverse().unwrap();
+                *rmat = Mat2x2([[v0, s0 * v0], [v1, s1 * v1]]);
+                *dmat = rmat.inverse().unwrap();
             }
         }
 
         let mut tree = Self {
             f,
-            recomp_matrices,
-            decomp_matrices,
-            isogenies,
+            recombine_matrices,
+            decompose_matrices,
+            rational_maps,
             subtree,
             xnn_s,
             xnn_s_inv,
@@ -446,6 +434,9 @@ impl<F: PrimeField> FFTree<F> {
 
         // Precompute evaluation tables <Z_0^2 rem X^(n/2) ≀ S> and
         // <Z_1^2 rem X^(n/2) ≀ S> using our partial FFTree.
+        // TODO: alternative approach - https://www.math.toronto.edu/swastik/ECFFT2.pdf
+        // section 5.1 equation 11 gives an algorithm for the vanishing polynomial.
+        // Might be nice for a O(log n) verifier vanishing polynomial evaluation.
         match n.cmp(&2) {
             Ordering::Greater => {
                 // compute z0z0_rem_xnn_s in O(n log n)
@@ -494,7 +485,7 @@ impl<F: PrimeField> FFTree<F> {
         tree
     }
 
-    fn derive_subtree(f: &BinaryTree<F>, isogenies: &[Isogeny<F>]) -> Option<Self> {
+    fn derive_subtree(f: &BinaryTree<F>, rational_maps: &[RationalMap<F>]) -> Option<Self> {
         let n = f.leaves().len() / 2;
         if n == 0 {
             return None;
@@ -509,7 +500,8 @@ impl<F: PrimeField> FFTree<F> {
             }
         }
 
-        Some(Self::from_tree(f_prime, isogenies.to_vec()))
+        let rational_maps = rational_maps.split_last().map_or(vec![], |i| i.1.to_vec());
+        Some(Self::from_tree(f_prime, rational_maps))
     }
 
     pub(crate) fn subtree(&self) -> Option<&Self> {
@@ -548,9 +540,9 @@ impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
         #[deny(unused_variables)]
         let Self {
             f,
-            recomp_matrices,
-            decomp_matrices,
-            isogenies,
+            recombine_matrices,
+            decompose_matrices,
+            rational_maps,
             xnn_s,
             xnn_s_inv,
             z0_s1,
@@ -562,9 +554,9 @@ impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
             subtree,
         } = self;
         f.serialize_with_mode(&mut writer, compress)?;
-        recomp_matrices.serialize_with_mode(&mut writer, compress)?;
-        decomp_matrices.serialize_with_mode(&mut writer, compress)?;
-        isogenies.serialize_with_mode(&mut writer, compress)?;
+        recombine_matrices.serialize_with_mode(&mut writer, compress)?;
+        decompose_matrices.serialize_with_mode(&mut writer, compress)?;
+        rational_maps.serialize_with_mode(&mut writer, compress)?;
         xnn_s.serialize_with_mode(&mut writer, compress)?;
         z0_s1.serialize_with_mode(&mut writer, compress)?;
         z1_s0.serialize_with_mode(&mut writer, compress)?;
@@ -589,9 +581,9 @@ impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
         #[deny(unused_variables)]
         let Self {
             f,
-            recomp_matrices,
-            decomp_matrices,
-            isogenies,
+            recombine_matrices,
+            decompose_matrices,
+            rational_maps,
             xnn_s,
             xnn_s_inv,
             z0_s1,
@@ -603,9 +595,9 @@ impl<F: PrimeField> CanonicalSerialize for FFTree<F> {
             subtree,
         } = self;
         let mut size = f.serialized_size(compress)
-            + recomp_matrices.serialized_size(compress)
-            + decomp_matrices.serialized_size(compress)
-            + isogenies.serialized_size(compress)
+            + recombine_matrices.serialized_size(compress)
+            + decompose_matrices.serialized_size(compress)
+            + rational_maps.serialized_size(compress)
             + xnn_s.serialized_size(compress)
             + z0_s1.serialized_size(compress)
             + z1_s0.serialized_size(compress)
@@ -638,9 +630,11 @@ impl<F: PrimeField> CanonicalDeserialize for FFTree<F> {
         validate: ark_serialize::Validate,
     ) -> Result<Self, ark_serialize::SerializationError> {
         let f = BinaryTree::deserialize_with_mode(&mut reader, compress, validate)?;
-        let recomp_matrices = BinaryTree::deserialize_with_mode(&mut reader, compress, validate)?;
-        let decomp_matrices = BinaryTree::deserialize_with_mode(&mut reader, compress, validate)?;
-        let isogenies = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
+        let recombine_matrices =
+            BinaryTree::deserialize_with_mode(&mut reader, compress, validate)?;
+        let decompose_matrices =
+            BinaryTree::deserialize_with_mode(&mut reader, compress, validate)?;
+        let rational_maps = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
         let xnn_s = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
         let z0_s1 = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
         let z1_s0 = Vec::deserialize_with_mode(&mut reader, compress, validate)?;
@@ -673,9 +667,9 @@ impl<F: PrimeField> CanonicalDeserialize for FFTree<F> {
         };
         Ok(Self {
             f,
-            recomp_matrices,
-            decomp_matrices,
-            isogenies,
+            recombine_matrices,
+            decompose_matrices,
+            rational_maps,
             subtree,
             xnn_s,
             xnn_s_inv,
@@ -687,17 +681,4 @@ impl<F: PrimeField> CanonicalDeserialize for FFTree<F> {
             z1z1_rem_xnn_s,
         })
     }
-}
-
-/// Returns the two adicity of a point i.e. returns `k` such that 2^k * p = 0.
-/// Returns `None` if `p` isn't a point of order 2^k.
-pub fn two_adicity<F: PrimeField>(p: Point<F>) -> Option<u32> {
-    let mut acc = p;
-    for i in 0..2048 {
-        if acc.is_zero() {
-            return Some(i);
-        }
-        acc += acc;
-    }
-    None
 }

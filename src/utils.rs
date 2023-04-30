@@ -1,3 +1,7 @@
+use crate::ec::Point;
+use alloc::collections::BTreeMap;
+use alloc::vec;
+use alloc::vec::Vec;
 use ark_ff::Field;
 use ark_ff::PrimeField;
 use ark_ff::Zero;
@@ -7,13 +11,12 @@ use ark_poly::DenseUVPolynomial;
 use ark_poly::Polynomial;
 use ark_serialize::CanonicalDeserialize;
 use ark_serialize::CanonicalSerialize;
+use core::ops::Deref;
+use core::ops::DerefMut;
+use core::ops::Mul;
 use num_bigint::BigUint;
 use num_integer::Integer;
 use rand::Rng;
-use std::collections::BTreeMap;
-use std::ops::Deref;
-use std::ops::DerefMut;
-use std::ops::Mul;
 
 type Degree = usize;
 
@@ -407,4 +410,17 @@ mod tests {
         assert_eq!(b.naive_mul(&t), gcd);
         assert!(!gcd.is_zero());
     }
+}
+
+/// Returns the two adicity of a point i.e. returns `k` such that 2^k * p = 0.
+/// Returns `None` if `p` isn't a point of order 2^k.
+pub fn two_adicity<F: PrimeField>(p: Point<F>) -> Option<u32> {
+    let mut acc = p;
+    for i in 0..2048 {
+        if acc.is_zero() {
+            return Some(i);
+        }
+        acc += acc;
+    }
+    None
 }
