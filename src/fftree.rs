@@ -6,6 +6,7 @@ use ark_ff::vec;
 use ark_ff::vec::Vec;
 use ark_ff::Field;
 use ark_poly::univariate::DensePolynomial;
+use ark_poly::DenseUVPolynomial;
 use ark_poly::Polynomial;
 use ark_serialize::CanonicalDeserialize;
 use ark_serialize::CanonicalSerialize;
@@ -16,13 +17,22 @@ use core::iter::zip;
 
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct RationalMap<F: Field> {
-    pub numerator_map: DensePolynomial<F>,
-    pub denominator_map: DensePolynomial<F>,
+    pub numerator: DensePolynomial<F>,
+    pub denominator: DensePolynomial<F>,
 }
 
 impl<F: Field> RationalMap<F> {
+    pub fn new(numerator: &[F], denominator: &[F]) -> Self {
+        let numerator = DensePolynomial::from_coefficients_slice(numerator);
+        let denominator = DensePolynomial::from_coefficients_slice(denominator);
+        Self {
+            numerator,
+            denominator,
+        }
+    }
+
     pub fn map(&self, x: &F) -> Option<F> {
-        Some(self.numerator_map.evaluate(x) * self.denominator_map.evaluate(x).inverse()?)
+        Some(self.numerator.evaluate(x) * self.denominator.evaluate(x).inverse()?)
     }
 }
 
@@ -369,7 +379,7 @@ impl<F: Field> FFTree<F> {
                 continue;
             }
 
-            let v = &map.denominator_map;
+            let v = &map.denominator;
             for (i, (rmat, dmat)) in zip(recombine_layer, decompose_layer).enumerate() {
                 let s0 = l[i];
                 let s1 = l[i + d];

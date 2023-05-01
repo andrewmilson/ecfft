@@ -16,3 +16,6 @@ ark-ff-optimized = { path = "../optimized-fields" }
 num-bigint = "0.4"
 num-integer = "0.1"
 rand = "0.8"
+
+[dev-dependencies]
+rayon = "1.7"

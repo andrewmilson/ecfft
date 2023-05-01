@@ -436,30 +436,3 @@ const SMALL_PRIMES: [usize; 46] = [
     101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193,
     197, 199,
 ];
-
-#[cfg(test)]
-mod tests {
-    use crate::ec::Curve;
-    use crate::ecfft::FFTree;
-    use crate::secp256k1::Fp;
-    use crate::utils;
-    use ark_ff::Fp256;
-    use ark_ff::MontBackend;
-    use ark_ff::MontConfig;
-    use ark_ff::One;
-    use ark_ff::PrimeField;
-    use ark_ff::UniformRand;
-    use ark_ff::Zero;
-    use ark_poly::univariate::DensePolynomial;
-    use ark_poly::DenseUVPolynomial;
-
-    #[test]
-    fn roots_test() {
-        let mut rng = rand::thread_rng();
-        let a = Fp::rand(&mut rng);
-        let b = Fp::rand(&mut rng);
-        let x3_ax_b = DensePolynomial::from_coefficients_vec(vec![b, a, Fp::zero(), Fp::one()]);
-        let curve = ShortWeierstrassCurve::new(a, b);
-        // println!("Roots: {:?}", utils::find_roots(&x3_ax_b));
-    }
-}

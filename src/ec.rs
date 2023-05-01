@@ -64,17 +64,10 @@ impl<F: Field> ShortWeierstrassCurve<F> {
                 let y_map_numerator = &[x0 * x0 - t, -(x0 + x0), F::one()];
                 let y_map_denominator = &[x0 * x0, -(x0 + x0), F::one()];
 
-                let x_map = RationalMap {
-                    numerator_map: DensePolynomial::from_coefficients_slice(x_map_numerator),
-                    denominator_map: DensePolynomial::from_coefficients_slice(x_map_denominator),
-                };
-
-                let y_map = RationalMap {
-                    numerator_map: DensePolynomial::from_coefficients_slice(y_map_numerator),
-                    denominator_map: DensePolynomial::from_coefficients_slice(y_map_denominator),
-                };
-
-                Isogeny::new(domain.into(), codomain.into(), x_map, y_map)
+                let r = RationalMap::new(x_map_numerator, x_map_denominator);
+                let g = RationalMap::new(&[], &[]);
+                let h = RationalMap::new(y_map_numerator, y_map_denominator);
+                Isogeny::new(domain.into(), codomain.into(), r, g, h)
             })
             .collect()
     }
@@ -148,27 +141,32 @@ impl<F: Field> From<ShortWeierstrassCurve<F>> for GeneralWeierstrassCurve<F> {
     }
 }
 
-// Defines an isogeny between curves
+/// Defines an isogeny between curves:
+/// ϕ(x, y) = (r(x), g(x) + h(x) * y)
 #[derive(Clone, Debug, CanonicalDeserialize, CanonicalSerialize)]
 pub struct Isogeny<F: Field> {
     pub domain: GeneralWeierstrassCurve<F>,
     pub codomain: GeneralWeierstrassCurve<F>,
-    pub x_map: RationalMap<F>,
-    pub y_map: RationalMap<F>,
+    pub r: RationalMap<F>,
+    pub g: RationalMap<F>,
+    pub h: RationalMap<F>,
 }
 
 impl<F: Field> Isogeny<F> {
+    /// Isogeny ϕ(x, y) = (r(x), g(x) + h(x) * y)
     pub fn new(
         domain: GeneralWeierstrassCurve<F>,
         codomain: GeneralWeierstrassCurve<F>,
-        x_map: RationalMap<F>,
-        y_map: RationalMap<F>,
+        r: RationalMap<F>,
+        g: RationalMap<F>,
+        h: RationalMap<F>,
     ) -> Self {
         Self {
             domain,
             codomain,
-            x_map,
-            y_map,
+            r,
+            g,
+            h,
         }
     }
 
@@ -178,10 +176,11 @@ impl<F: Field> Isogeny<F> {
             Point::zero()
         } else {
             assert_eq!(self.domain, p.curve.unwrap());
-            let x_prime = self.x_map.map(&p.x);
-            let y_prime = self.y_map.map(&p.x).map(|v| v * p.y);
-            match (x_prime, y_prime) {
-                (Some(x), Some(y)) => Point::new(x, y, self.codomain),
+            let rx = self.r.map(&p.x);
+            let gx = self.g.map(&p.x);
+            let hx = self.h.map(&p.x);
+            match (rx, gx, hx) {
+                (Some(rx), Some(gx), Some(hx)) => Point::new(rx, gx + hx * p.y, self.codomain),
                 _ => Point::zero(),
             }
         }
@@ -364,7 +363,7 @@ pub fn build_ec_fftree<F: PrimeField>(
                 }
             })
             .expect("cannot find a suitable isogeny");
-        rational_maps.push(isogeny.x_map)
+        rational_maps.push(isogeny.r)
     }
 
     // generate the FFTree leaf nodes
@@ -405,7 +404,7 @@ mod tests {
 
         for p in two_torsion_points {
             for isogeny in &two_isogenies {
-                assert!(isogeny.x_map.map(&p.x).is_none());
+                assert!(isogeny.r.map(&p.x).is_none());
             }
         }
     }
