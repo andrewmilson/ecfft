@@ -34,6 +34,10 @@ impl<F: Field> RationalMap<F> {
     pub fn map(&self, x: &F) -> Option<F> {
         Some(self.numerator.evaluate(x) * self.denominator.evaluate(x).inverse()?)
     }
+
+    pub fn zero() -> Self {
+        Self::new(&[], &[F::one()])
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

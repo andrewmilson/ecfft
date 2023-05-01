@@ -1,10 +1,11 @@
-#![feature(array_chunks)]
+#![feature(array_chunks, let_chains)]
 
 extern crate alloc;
 
 pub mod ec;
 pub mod errors;
 pub mod fftree;
+pub mod find_curve;
 pub mod utils;
 
 use ark_ff::PrimeField;
@@ -21,12 +22,13 @@ pub mod secp256k1 {
     use super::FFTree;
     use super::FftreeField;
     use super::Point;
-    use crate::ec::build_ec_fftree;
-    use crate::ec::GeneralWeierstrassCurve;
+    use crate::ec::find_isogeny_chain;
+    use crate::ec::GoodCurve;
     use ark_ff::Fp256;
     use ark_ff::MontBackend;
     use ark_ff::MontConfig;
     use ark_ff::MontFp as F;
+    use ark_ff::Zero;
 
     /// Secp256k1 field
     #[derive(MontConfig)]
@@ -39,35 +41,49 @@ pub mod secp256k1 {
 
     impl FftreeField for Fp {
         fn build_fftree(n: usize) -> Option<FFTree<Self>> {
-            /// Curve with 2^21 | #E
-            const CURVE: GeneralWeierstrassCurve<Fp> = GeneralWeierstrassCurve::new(
-                F!("0"),
-                F!("0"),
-                F!("0"),
-                F!("17748197196278671983710270881246356270498036375776972586378254349879758261964"),
-                F!("48180245521382520283744586749255972002017879486304201780206317812189781697357"),
+            assert!(n.is_power_of_two());
+            let log_n = n.ilog2();
+
+            // Curve with 2^31 | #E
+            let curve = GoodCurve::new_odd(
+                F!("68841697511640215656821373706374234598217962241974318227639791148600733690420"),
+                F!("114313710132054377775997502842410245686288156214174113961380608383562274249190"),
             );
-
-            const COSET_OFFSET: Point<Fp> = Point::new(
-                F!("115586231547899789830608385860912259025927156426918763229928961975571719340855"),
-                F!("70390068299898099747397252552195472490177603500858519188131399005432093509871"),
-                CURVE,
+            let coset_offset = Point::new(
+                F!("77457053793169897889304038652609345026746378478577985075189525651767568940193"),
+                F!("35008124385965218187120632765572629524990942960751417275802166882882266399874"),
+                curve,
             );
-
-            const SUBGROUP_GENERATOR: Point<Fp> = Point::new(
-                F!("23561735202437581205271378497680111566519991508173489172095082128876671442116"),
-                F!("84964696387510691827760857554228718714431485321484523373785277466595465928698"),
-                CURVE,
+            let subgroup_generator = Point::new(
+                F!("47338370574030999257492065562148397416925214763814892326587854834443644679284"),
+                F!("26548029037302126578093317363856407980656459126501265688960367566322417565573"),
+                curve,
             );
+            let subgroup_two_addicity = 31;
 
-            const SUBGORUP_TWO_ADDICITY: u32 = 20;
+            // FFTree size is too large for our generator
+            if log_n > subgroup_two_addicity {
+                return None;
+            }
 
-            build_ec_fftree(
-                SUBGROUP_GENERATOR,
-                1 << SUBGORUP_TWO_ADDICITY,
-                COSET_OFFSET,
-                n,
-            )
+            // get a generator of a subgroup with order `n`
+            let mut generator = subgroup_generator;
+            for _ in 0..subgroup_two_addicity - log_n {
+                generator += generator;
+            }
+
+            // generate the FFTree leaf nodes
+            let mut leaves = vec![Self::zero(); n];
+            let mut acc = Point::zero();
+            for x in &mut leaves {
+                *x = (coset_offset + acc).x;
+                acc += generator;
+            }
+
+            let isogenies = find_isogeny_chain(generator);
+            let rational_maps = isogenies.into_iter().map(|isogeny| isogeny.r).collect();
+
+            Some(FFTree::new(leaves, rational_maps))
         }
     }
 
@@ -179,16 +195,17 @@ pub mod m31 {
     use super::FftreeField;
     use super::Point;
     use crate::ec::build_ec_fftree;
-    use crate::ec::GeneralWeierstrassCurve;
+    use crate::ec::ShortWeierstrassCurve;
     pub use ark_ff_optimized::fp31::Fp;
 
     impl FftreeField for Fp {
         fn build_fftree(n: usize) -> Option<FFTree<Fp>> {
             /// Supersingular curve with 2^31 | #E
-            const CURVE: GeneralWeierstrassCurve<Fp> =
-                GeneralWeierstrassCurve::new(Fp(0), Fp(0), Fp(0), Fp(1), Fp(0));
-            const COSET_OFFSET: Point<Fp> = Point::new(Fp(1048755163), Fp(279503108), CURVE);
-            const SUBGROUP_GENERATOR: Point<Fp> = Point::new(Fp(1273083559), Fp(804329170), CURVE);
+            const CURVE: ShortWeierstrassCurve<Fp> = ShortWeierstrassCurve::new(Fp(1), Fp(0));
+            const COSET_OFFSET: Point<ShortWeierstrassCurve<Fp>> =
+                Point::new(Fp(1048755163), Fp(279503108), CURVE);
+            const SUBGROUP_GENERATOR: Point<ShortWeierstrassCurve<Fp>> =
+                Point::new(Fp(1273083559), Fp(804329170), CURVE);
             const SUBGORUP_TWO_ADDICITY: u32 = 28;
 
             build_ec_fftree(

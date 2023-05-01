@@ -1,4 +1,5 @@
 use crate::ec::Point;
+use crate::ec::WeierstrassCurve;
 use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -345,6 +346,11 @@ impl<F: Field> Mul<&[F; 2]> for &Mat2x2<F> {
     }
 }
 
+/// Returns `true` if `F` is an odd order field, otherwise returns `false`.
+pub fn is_odd<F: Field>() -> bool {
+    F::characteristic()[0].is_odd()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,7 +420,7 @@ mod tests {
 
 /// Returns the two adicity of a point i.e. returns `k` such that 2^k * p = 0.
 /// Returns `None` if `p` isn't a point of order 2^k.
-pub fn two_adicity<F: PrimeField>(p: Point<F>) -> Option<u32> {
+pub fn two_adicity<C: WeierstrassCurve>(p: Point<C>) -> Option<u32> {
     let mut acc = p;
     for i in 0..2048 {
         if acc.is_zero() {
