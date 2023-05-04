@@ -3,7 +3,6 @@
 extern crate alloc;
 
 pub mod ec;
-pub mod errors;
 pub mod fftree;
 pub mod find_curve;
 pub mod utils;
@@ -13,7 +12,7 @@ use ec::Point;
 pub use fftree::FFTree;
 pub use fftree::Moiety;
 
-/// The interface for fields that are able to be used in ECFFTs.
+/// The interface for fields to build FFTrees.
 pub trait FftreeField: PrimeField {
     fn build_fftree(n: usize) -> Option<FFTree<Self>>;
 }
@@ -44,22 +43,22 @@ pub mod secp256k1 {
             assert!(n.is_power_of_two());
             let log_n = n.ilog2();
 
-            // Curve with 2^31 | #E
+            // Curve with 2^36 | #E
             let curve = GoodCurve::new_odd(
-                F!("68841697511640215656821373706374234598217962241974318227639791148600733690420"),
-                F!("114313710132054377775997502842410245686288156214174113961380608383562274249190"),
+                F!("31172306031375832341232376275243462303334845584808513005362718476441963632613"),
+                F!("45508371059383884471556188660911097844526467659576498497548207627741160623272"),
             );
             let coset_offset = Point::new(
-                F!("77457053793169897889304038652609345026746378478577985075189525651767568940193"),
-                F!("35008124385965218187120632765572629524990942960751417275802166882882266399874"),
+                F!("105623886150579165427389078198493427091405550492761682382732004625374789850161"),
+                F!("7709812624542158994629670452026922591039826164720902911013234773380889499231"),
                 curve,
             );
             let subgroup_generator = Point::new(
-                F!("47338370574030999257492065562148397416925214763814892326587854834443644679284"),
-                F!("26548029037302126578093317363856407980656459126501265688960367566322417565573"),
+                F!("41293412487153066667050767300223451435019201659857889215769525847559135483332"),
+                F!("73754924733368840065089190002333366411120578552679996887076912271884749237510"),
                 curve,
             );
-            let subgroup_two_addicity = 31;
+            let subgroup_two_addicity = 36;
 
             // FFTree size is too large for our generator
             if log_n > subgroup_two_addicity {
@@ -273,12 +272,6 @@ pub mod m31 {
             let zero = Fp::zero();
             let coeffs = &[one, one, one, zero, zero, one, zero, zero];
             let evals = fftree.enter(coeffs);
-
-            // println!("EVAL DOMAIN: {:?}", fftree.subtree_with_size(8).eval_domain());
-            // // println!("EVAL DOMAIN: {:?}", fftree.z0_s1_inv);
-            // let coeffs2 = fftree.exit(&evals);
-            // // println!("TOOOO: {:?}", evals);
-            // // println!("TOOOO: {:?}", coeffs2);
 
             let degree = fftree.degree(&evals);
 

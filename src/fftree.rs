@@ -63,6 +63,7 @@ pub struct FFTree<F: Field> {
     pub z1z1_rem_xnn_s: Vec<F>, // = <Z_0^2 mod X^(n/2) ≀ S>
 }
 
+// TODO: errors
 impl<F: Field> FFTree<F> {
     pub fn new(leaves: Vec<F>, rational_maps: Vec<RationalMap<F>>) -> Self {
         let n = leaves.len();
@@ -339,8 +340,8 @@ impl<F: Field> FFTree<F> {
             .collect()
     }
 
-    /// Returns an evaluation of the vanishing polynomial Z(x) = ∏ (x - S_i)
-    /// Runtime O(n log^2 n)
+    /// Returns an evaluation of the vanishing polynomial Z(x) = ∏ (x - a_i)
+    /// Runtime O(n log^2 n). `vanishi_domain = [a_0, a_1, ..., a_(n - 1)]`
     /// Section 7.1 https://arxiv.org/pdf/2107.08473.pdf
     pub fn vanish(&self, vanish_domain: &[F]) -> Vec<F> {
         let tree = self.subtree_with_size(vanish_domain.len() * 2);

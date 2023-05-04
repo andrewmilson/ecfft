@@ -1,7 +1,6 @@
 #![feature(let_chains)]
 
 use ark_ff::Field;
-use ecfft::ec::find_isogeny_chain;
 use ecfft::ec::GoodCurve;
 use ecfft::find_curve::find_curve;
 // use ecfft::m31::Fp;
@@ -10,13 +9,7 @@ use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 
 fn main() {
-    let mut rng = rand::thread_rng();
-    let (n, generator) = find_curve::<Fp>(&mut rng, 5);
-    println!("{:?}", find_isogeny_chain(generator));
-}
-
-fn search() {
-    let max_n = AtomicU32::new(0);
+    let max_n = AtomicU32::new(10);
 
     rayon::scope(|s| {
         for _ in 0..10 {

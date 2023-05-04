@@ -14,6 +14,14 @@ This library enables fast polynomial arithmetic over any prime field by implemen
 |REDC|Computes polynomial analogue of Montgomery's REDC|$\mathcal{O}(n\log{n})$|
 |VANISH|Generates a vanishing polynomial ([from section 7.1](https://arxiv.org/pdf/2107.08473.pdf))|$\mathcal{O}(n\log^2{n})$|
 
+There are also some relevant algorithms implemented from [ECFFT Part II](https://www.math.toronto.edu/swastik/ECFFT2.pdf). The algorithms are:
+
+|Algorithm|Description|Runtime|
+|:-|:-|:-|
+|FIND_CURVE|Finds a curve over $\mathbb{F}_q$ with a cyclic subgroup of order $2^k$ |$\mathcal{O}(2^k\log{q})$|
+
+
+
 ## Build FFTrees at compile time
 
 FFTrees are the core datastructure that the ECFFT algorithms are built apon. FFTrees can be generated and serialized at compile time and then be deserialised and used at runtime. This can be preferable since generating FFTrees involves a significant amount of computation. While this approach improves runtime it will significantly blow up a binary's size. Generating a FFTree capable of evaluating/interpolating degree $n$ polynomials takes $\mathcal{O}(n\log^3{n})$ - the space complexity of this FFTree is $\mathcal{O}(n)$.
