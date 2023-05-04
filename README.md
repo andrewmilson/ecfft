@@ -1,3 +1,5 @@
+> **Warning**
+> this code is a work in progress 👷‍♂️🚧. All the algorithms work so please try it out and provide feedback. If it addresses a use-case that is important to you please open an issue to discuss it or get in touch [andrew.j.milson@gmail.com](mailto:andrew.j.milson@gmail.com)
 
 # ECFFT
 
