@@ -10,9 +10,8 @@ use rand::SeedableRng;
 
 const BENCHMARK_INPUT_SIZES: [usize; 1] = [2048];
 
-const M31_DESCRIPTION: &str = "31 bit Mersenne prime field";
-
-const SECP256K1_FIELD_DESCRIPTION: &str = "secp256k1's prime field";
+const FIELD_DESCRIPTION_M31: &str = "31 bit Mersenne prime field";
+const FIELD_DESCRIPTION_SECP256K1: &str = "secp256k1's prime field";
 
 fn bench_ecfft_algorithms<F: FftreeField>(c: &mut Criterion, field_description: &str) {
     let mut rng = StdRng::from_seed([1; 32]);
@@ -73,13 +72,13 @@ fn bench_fftree<F: FftreeField>(c: &mut Criterion, field_description: &str) {
 }
 
 fn ecfft_algorithm_benches(c: &mut Criterion) {
-    bench_ecfft_algorithms::<m31::Fp>(c, M31_DESCRIPTION);
-    bench_ecfft_algorithms::<secp256k1::Fp>(c, SECP256K1_FIELD_DESCRIPTION);
+    bench_ecfft_algorithms::<m31::Fp>(c, FIELD_DESCRIPTION_M31);
+    bench_ecfft_algorithms::<secp256k1::Fp>(c, FIELD_DESCRIPTION_SECP256K1);
 }
 
 fn fftree_benches(c: &mut Criterion) {
-    bench_fftree::<m31::Fp>(c, M31_DESCRIPTION);
-    bench_fftree::<secp256k1::Fp>(c, SECP256K1_FIELD_DESCRIPTION);
+    bench_fftree::<m31::Fp>(c, FIELD_DESCRIPTION_M31);
+    bench_fftree::<secp256k1::Fp>(c, FIELD_DESCRIPTION_SECP256K1);
 }
 
 criterion_group!(fftree_group, ecfft_algorithm_benches, fftree_benches);
