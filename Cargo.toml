@@ -22,7 +22,7 @@ harness = false
 ark-ff = "0.4"
 ark-serialize = { version = "0.4", features = [ "std" ] }
 ark-poly = "0.4"
-ark-ff-optimized = { path = "../optimized-fields" }
+ark-ff-optimized = "0.4"
 num-bigint = "0.4"
 num-integer = "0.1"
 rand = "0.8"

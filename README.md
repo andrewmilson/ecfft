@@ -1,6 +1,3 @@
-> **Warning**
-> this code is a work in progress 👷‍♂️🚧. All the algorithms work so please try it out and provide feedback. If it addresses a use-case that is important to you please open an issue to discuss it or get in touch [andrew.j.milson@gmail.com](mailto:andrew.j.milson@gmail.com)
-
 # ECFFT
 
 This library enables fast polynomial arithmetic over any prime field by implementing all the algorithms outlined in [Elliptic Curve Fast Fourier Transform (ECFFT) Part I](https://arxiv.org/pdf/2107.08473.pdf). The implemented algorithms are:
@@ -69,9 +66,3 @@ fn main() {
     assert_eq!(poly, coeffs);
 }
 ```
-
-# Performance
-
-The implementation of the ECFFT algorithms in this repo are significantly slower than the classical FFT. For fields of the same size:
-- ECFFT evaluation **~60x slower** than classic FFT
-- ECFFT interpolation **~100x slower** than classic IFFT
