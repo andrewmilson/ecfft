@@ -40,10 +40,10 @@ impl<F: Field> RationalMap<F> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Moiety {
-    S0 = 0,
-    S1 = 1,
+    S0,
+    S1,
 }
 
 #[derive(Clone, Debug)]
@@ -120,7 +120,10 @@ impl<F: Field> FFTree<F> {
             .decompose_matrices
             .get_layer(layer)
             .iter()
-            .skip(1 - moiety as usize)
+            .skip(match moiety {
+                Moiety::S0 => 1,
+                Moiety::S1 => 0,
+            })
             .step_by(2)
             .enumerate()
         {
@@ -138,7 +141,10 @@ impl<F: Field> FFTree<F> {
             .recombine_matrices
             .get_layer(layer)
             .iter()
-            .skip(moiety as usize)
+            .skip(match moiety {
+                Moiety::S0 => 0,
+                Moiety::S1 => 1,
+            })
             .step_by(2)
             .enumerate()
         {
@@ -164,8 +170,7 @@ impl<F: Field> FFTree<F> {
         zip(e, z).map(|(e, z)| e + z).collect()
     }
 
-    /// Extends evals on the chosen moiety
-    /// TODO: docs
+    /// Extends special monic polynomials
     pub fn mextend(&self, evals: &[F], moiety: Moiety) -> Vec<F> {
         let tree = self.subtree_with_size(evals.len() * 2);
         tree.mextend_impl(evals, moiety)
@@ -257,19 +262,31 @@ impl<F: Field> FFTree<F> {
         tree.exit_impl(evals)
     }
 
-    fn redc_z0_impl(&self, evals: &[F], a: &[F]) -> Vec<F> {
+    fn redc_impl(&self, evals: &[F], a: &[F], moiety: Moiety) -> Vec<F> {
         let (e0, e1): (Vec<F>, Vec<F>) = evals.chunks(2).map(|e| (e[0], e[1])).unzip();
         let (mut a0_inv, a1): (Vec<F>, Vec<F>) = a.chunks(2).map(|a| (a[0], a[1])).unzip();
         batch_inversion(&mut a0_inv);
 
-        // compute <π/a ≀ S0>
+        // compute <π/a ≀ S>
         let t0: Vec<F> = zip(e0, a0_inv).map(|(e0, a0_inv)| e0 * a0_inv).collect();
-        let g1 = self.extend_impl(&t0, Moiety::S1);
-        // compute <(π - a*g)/Z_0 ≀ S1>
-        let h1: Vec<F> = zip(zip(e1, g1), zip(a1, &self.z0_inv_s1))
+        let g1 = self.extend_impl(
+            &t0,
+            match moiety {
+                Moiety::S1 => Moiety::S0,
+                Moiety::S0 => Moiety::S1,
+            },
+        );
+
+        let z_inv = match moiety {
+            Moiety::S0 => &self.z0_inv_s1,
+            Moiety::S1 => &self.z1_inv_s0,
+        };
+
+        // compute <(π - a*g)/Z ≀ S'>
+        let h1: Vec<F> = zip(zip(e1, g1), zip(a1, z_inv))
             .map(|((e1, g1), (a1, z0_inv))| (e1 - g1 * a1) * z0_inv)
             .collect();
-        let h0 = self.extend_impl(&h1, Moiety::S0);
+        let h0 = self.extend_impl(&h1, moiety);
 
         zip(h0, h1).flat_map(|h| [h.0, h.1]).collect()
     }
@@ -279,24 +296,7 @@ impl<F: Field> FFTree<F> {
     /// `a` must be a polynomial of degree at most n/2 having no zeroes in S_0
     pub fn redc_z0(&self, evals: &[F], a: &[F]) -> Vec<F> {
         let tree = self.subtree_with_size(evals.len());
-        tree.redc_z0_impl(evals, a)
-    }
-
-    fn redc_z1_impl(&self, evals: &[F], a: &[F]) -> Vec<F> {
-        let (e0, e1): (Vec<F>, Vec<F>) = evals.chunks(2).map(|e| (e[0], e[1])).unzip();
-        let (a0, mut a1_inv): (Vec<F>, Vec<F>) = a.chunks(2).map(|a| (a[0], a[1])).unzip();
-        batch_inversion(&mut a1_inv);
-
-        // compute <π/a ≀ S1>
-        let t1: Vec<F> = zip(e1, a1_inv).map(|(e1, a1_inv)| e1 * a1_inv).collect();
-        let g0 = self.extend_impl(&t1, Moiety::S0);
-        // compute <(π - a*g)/Z_1 ≀ S1>
-        let h0: Vec<F> = zip(zip(e0, g0), zip(a0, &self.z1_inv_s0))
-            .map(|((e0, g0), (a0, z1_inv))| (e0 - g0 * a0) * z1_inv)
-            .collect();
-        let h1 = self.extend_impl(&h0, Moiety::S1);
-
-        zip(h0, h1).flat_map(|h| [h.0, h.1]).collect()
+        tree.redc_impl(evals, a, Moiety::S0)
     }
 
     /// Computes <P(X)*Z_1(x)^(-1) mod A ≀ S>
@@ -304,13 +304,13 @@ impl<F: Field> FFTree<F> {
     /// `A` must be a polynomial of degree at most n/2 having no zeroes in S_1
     pub fn redc_z1(&self, evals: &[F], a: &[F]) -> Vec<F> {
         let tree = self.subtree_with_size(evals.len());
-        tree.redc_z1_impl(evals, a)
+        tree.redc_impl(evals, a, Moiety::S1)
     }
 
     fn modular_reduce_impl(&self, evals: &[F], a: &[F], c: &[F]) -> Vec<F> {
-        let h = self.redc_z0_impl(evals, a);
+        let h = self.redc_impl(evals, a, Moiety::S0);
         let hc: Vec<F> = zip(h, c).map(|(h, c)| h * c).collect();
-        self.redc_z0_impl(&hc, a)
+        self.redc_impl(&hc, a, Moiety::S0)
     }
 
     /// Computes MOD algorithm

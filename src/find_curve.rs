@@ -218,7 +218,7 @@ fn cyclic_two_sylow_subgroup<F: Field>(a: F, bb: F) -> (u32, Option<F>) {
 }
 
 /// Returns a point with order 2^n on a Good Curve such that n >= k.
-/// Output is of the form (n, subgroup_generator_point, curve)
+/// Output is of the form (n, subgroup_generator_point)
 /// Based on `find_curve` algorithm from "ECFFT part II":
 /// <https://www.math.toronto.edu/swastik/ECFFT2.pdf>
 pub fn find_curve<F: Field>(mut rng: impl Rng, k: u32) -> (u32, Point<GoodCurve<F>>) {

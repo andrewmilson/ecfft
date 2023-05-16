@@ -8,6 +8,16 @@ categories = ["cryptography"]
 version = "0.1.0"
 edition = "2021"
 
+[[bench]]
+name = "fftree"
+path = "benches/fftree.rs"
+harness = false
+
+[[bench]]
+name = "ecfft_vs_fft"
+path = "benches/ecfft_vs_fft.rs"
+harness = false
+
 [dependencies]
 ark-ff = "0.4"
 ark-serialize = { version = "0.4", features = [ "std" ] }
@@ -18,4 +28,9 @@ num-integer = "0.1"
 rand = "0.8"
 
 [dev-dependencies]
+criterion = "0.4"
 rayon = "1.7"
+
+[profile.bench]
+codegen-units = 1
+lto = true

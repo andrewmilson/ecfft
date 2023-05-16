@@ -351,6 +351,19 @@ pub fn is_odd<F: Field>() -> bool {
     F::characteristic()[0].is_odd()
 }
 
+/// Returns the two adicity of a point i.e. returns `k` such that 2^k * p = 0.
+/// Returns `None` if `p` isn't a point of order 2^k.
+pub fn two_adicity<C: WeierstrassCurve>(p: Point<C>) -> Option<u32> {
+    let mut acc = p;
+    for i in 0..2048 {
+        if acc.is_zero() {
+            return Some(i);
+        }
+        acc += acc;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,17 +429,4 @@ mod tests {
         assert_eq!(b.naive_mul(&t), gcd);
         assert!(!gcd.is_zero());
     }
-}
-
-/// Returns the two adicity of a point i.e. returns `k` such that 2^k * p = 0.
-/// Returns `None` if `p` isn't a point of order 2^k.
-pub fn two_adicity<C: WeierstrassCurve>(p: Point<C>) -> Option<u32> {
-    let mut acc = p;
-    for i in 0..2048 {
-        if acc.is_zero() {
-            return Some(i);
-        }
-        acc += acc;
-    }
-    None
 }

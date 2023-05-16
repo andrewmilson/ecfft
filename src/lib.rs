@@ -61,7 +61,7 @@ pub mod secp256k1 {
             let subgroup_two_addicity = 36;
 
             // FFTree size is too large for our generator
-            if log_n > subgroup_two_addicity {
+            if log_n >= subgroup_two_addicity {
                 return None;
             }
 
