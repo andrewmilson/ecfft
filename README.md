@@ -72,4 +72,6 @@ fn main() {
 
 # Performance
 
-TODO
+The implementation of the ECFFT algorithms in this repo are significantly slower than the classical FFT. For fields of the same size:
+- ECFFT evaluation **~60x slower** than classic FFT
+- ECFFT interpolation **~100x slower** than classic IFFT

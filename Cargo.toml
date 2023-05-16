@@ -14,8 +14,8 @@ path = "benches/fftree.rs"
 harness = false
 
 [[bench]]
-name = "ecfft_vs_fft"
-path = "benches/ecfft_vs_fft.rs"
+name = "compareison"
+path = "benches/comparison.rs"
 harness = false
 
 [dependencies]

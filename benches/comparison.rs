@@ -13,7 +13,7 @@ use ecfft::FftreeField;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-const BENCHMARK_INPUT_SIZES: [usize; 1] = [32768];
+const BENCHMARK_INPUT_SIZES: [usize; 1] = [8192];
 
 #[derive(MontConfig)]
 #[modulus = "3618502788666131213697322783095070105623107215331596699973092056135872020481"]
@@ -22,6 +22,7 @@ pub struct FpMontConfig;
 
 pub type FftField = Fp256<MontBackend<FpMontConfig, 4>>;
 
+// TODO: naive evaluation/interpolation
 fn ecfft_vs_fft_benches(c: &mut Criterion) {
     let mut rng = StdRng::from_seed([1; 32]);
     let mut group = c.benchmark_group("ECFFT vs FFT");
