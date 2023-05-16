@@ -77,7 +77,7 @@ impl<F: Field> FFTree<F> {
         f[n..].copy_from_slice(&leaves);
 
         // generate internal nodes
-        // TODO: use array_windows_mut
+        // TODO: would be cool to use array_windows_mut
         let mut f_layers = f.get_layers_mut();
         for (i, rational_map) in rational_maps.iter().enumerate() {
             let (prev_layer, layer) = {
@@ -94,16 +94,6 @@ impl<F: Field> FFTree<F> {
 
         Self::from_tree(f, rational_maps)
     }
-
-    /// Decomposes evaluation table <P(X) ≀ S> into <P_0(X) ≀ T> and
-    /// <P_1(X) ≀ T> where T = ψ(S), ψ(X) = u(X)/v(X) and
-    /// P(s) = (P_0(ψ(s)) + s * P_1(ψ(s))) * v(s)^(d/2 - 1)
-    // pub fn decompose(&self, evals: &[F], moiety: Moiety) -> (Vec<F>, Vec<F>) {}
-
-    // /// Recombines evaluation tables <P_0(X) ≀ T> and <P_1(X) ≀ T> to produce
-    // /// <P(X) ≀ S> where ψ(X) = u(X)/v(X), T = ψ(S) and
-    // /// P(s) = (P_0(ψ(s)) + s * P_1(ψ(s)) * v(s)^(d/2 - 1)
-    // fn recombine(&self) -> (Vec<F>, Vec<F>) {}
 
     fn extend_impl(&self, evals: &[F], moiety: Moiety) -> Vec<F> {
         let n = evals.len();
@@ -195,6 +185,7 @@ impl<F: Field> FFTree<F> {
             .collect()
     }
 
+    /// Converts from coefficient to evaluation representation of a polynomial
     pub fn enter(&self, coeffs: &[F]) -> Vec<F> {
         let tree = self.subtree_with_size(coeffs.len());
         tree.enter_impl(coeffs)
@@ -216,7 +207,7 @@ impl<F: Field> FFTree<F> {
             return subtree.degree_impl(&e0);
         }
 
-        // compute <(π-g)/Z_0 ≀ S1>
+        // compute `<(π-g)/Z_0 ≀ S1>`
         // isolate the evaluations of the coefficients on the RHS
         let t1: Vec<F> = zip(zip(e1, g1), &self.z0_inv_s1)
             .map(|((e1, g1), z0_inv)| (e1 - g1) * z0_inv)
@@ -225,7 +216,7 @@ impl<F: Field> FFTree<F> {
         n / 2 + subtree.degree_impl(&t0)
     }
 
-    /// Evaluates the degree of an evaluation table in O(n log n)
+    /// Evaluates the degree of an evaluation table in `O(n log n)`
     pub fn degree(&self, evals: &[F]) -> usize {
         let tree = self.subtree_with_size(evals.len());
         tree.degree_impl(evals)
@@ -257,6 +248,7 @@ impl<F: Field> FFTree<F> {
         a
     }
 
+    /// Converts from evaluation to coefficient representation of a polynomial
     pub fn exit(&self, evals: &[F]) -> Vec<F> {
         let tree = self.subtree_with_size(evals.len());
         tree.exit_impl(evals)
@@ -282,7 +274,7 @@ impl<F: Field> FFTree<F> {
             Moiety::S1 => &self.z1_inv_s0,
         };
 
-        // compute <(π - a*g)/Z ≀ S'>
+        // compute `<(π - a*g)/Z ≀ S'>`
         let h1: Vec<F> = zip(zip(e1, g1), zip(a1, z_inv))
             .map(|((e1, g1), (a1, z0_inv))| (e1 - g1 * a1) * z0_inv)
             .collect();
@@ -293,15 +285,15 @@ impl<F: Field> FFTree<F> {
 
     /// Computes <P(X)*Z_0(x)^(-1) mod a ≀ S>
     /// Z_0 is the vanishing polynomial of S_0
-    /// `a` must be a polynomial of degree at most n/2 having no zeroes in S_0
+    /// `a` must be a polynomial of max degree `n/2` having no zeroes in `S_0`
     pub fn redc_z0(&self, evals: &[F], a: &[F]) -> Vec<F> {
         let tree = self.subtree_with_size(evals.len());
         tree.redc_impl(evals, a, Moiety::S0)
     }
 
-    /// Computes <P(X)*Z_1(x)^(-1) mod A ≀ S>
-    /// Z_1 is the vanishing polynomial of S_1
-    /// `A` must be a polynomial of degree at most n/2 having no zeroes in S_1
+    /// Computes `<P(X)*Z_1(x)^(-1) mod A ≀ S>`
+    /// `Z_1` is the vanishing polynomial of `S_1`
+    /// `A` must be a polynomial of max degree `n/2` having no zeroes in `S_1`
     pub fn redc_z1(&self, evals: &[F], a: &[F]) -> Vec<F> {
         let tree = self.subtree_with_size(evals.len());
         tree.redc_impl(evals, a, Moiety::S1)
@@ -314,8 +306,8 @@ impl<F: Field> FFTree<F> {
     }
 
     /// Computes MOD algorithm
-    /// `a` must be a polynomial of degree at most n/2 having no zeroes in S_0
-    /// `c` must be the evaluation table <Z_0^2 mod a ≀ S>
+    /// `a` must be a polynomial of max degree `n/2` having no zeroes in `S_0`
+    /// `c` must be the evaluation table `<Z_0^2 mod a ≀ S>`
     pub fn modular_reduce(&self, evals: &[F], a: &[F], c: &[F]) -> Vec<F> {
         let tree = self.subtree_with_size(evals.len());
         tree.modular_reduce_impl(evals, a, c)
@@ -340,8 +332,8 @@ impl<F: Field> FFTree<F> {
             .collect()
     }
 
-    /// Returns an evaluation of the vanishing polynomial Z(x) = ∏ (x - a_i)
-    /// Runtime O(n log^2 n). `vanishi_domain = [a_0, a_1, ..., a_(n - 1)]`
+    /// Returns an evaluation of the vanishing polynomial `Z(x) = ∏ (x - a_i)`
+    /// Runtime `O(n log^2 n)`. `vanishi_domain = [a_0, a_1, ..., a_(n - 1)]`
     /// Section 7.1 https://arxiv.org/pdf/2107.08473.pdf
     pub fn vanish(&self, vanish_domain: &[F]) -> Vec<F> {
         let tree = self.subtree_with_size(vanish_domain.len() * 2);

@@ -1,9 +1,12 @@
+use ark_serialize::CanonicalDeserialize;
+use ark_serialize::CanonicalSerialize;
 use criterion::criterion_group;
 use criterion::criterion_main;
 use criterion::BenchmarkId;
 use criterion::Criterion;
 use ecfft::m31;
 use ecfft::secp256k1;
+use ecfft::FFTree;
 use ecfft::FftreeField;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -63,9 +66,43 @@ fn bench_fftree<F: FftreeField>(c: &mut Criterion, field_description: &str) {
     group.sample_size(10);
 
     for n in BENCHMARK_INPUT_SIZES {
+        let fftree = F::build_fftree(n).unwrap();
+
         group.bench_with_input(BenchmarkId::new("generate", n), &n, |b, _| {
             b.iter(|| F::build_fftree(n).unwrap())
         });
+
+        group.bench_with_input(BenchmarkId::new("serialize compressed", n), &n, |b, _| {
+            b.iter(|| {
+                let mut bytes = Vec::new();
+                fftree.serialize_compressed(&mut bytes).unwrap();
+                bytes
+            })
+        });
+
+        group.bench_with_input(BenchmarkId::new("serialize uncompressed", n), &n, |b, _| {
+            b.iter(|| {
+                let mut bytes = Vec::new();
+                fftree.serialize_uncompressed(&mut bytes).unwrap();
+                bytes
+            })
+        });
+
+        group.bench_with_input(BenchmarkId::new("deserialize compressed", n), &n, |b, _| {
+            let mut bytes = Vec::new();
+            fftree.serialize_compressed(&mut bytes).unwrap();
+            b.iter(|| FFTree::<F>::deserialize_compressed(&*bytes).unwrap())
+        });
+
+        group.bench_with_input(
+            BenchmarkId::new("deserialize uncompressed", n),
+            &n,
+            |b, _| {
+                let mut bytes = Vec::new();
+                fftree.serialize_uncompressed(&mut bytes).unwrap();
+                b.iter(|| FFTree::<F>::deserialize_uncompressed(&*bytes).unwrap())
+            },
+        );
     }
 
     group.finish();
