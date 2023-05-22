@@ -1,12 +1,11 @@
 use crate::utils::BinaryTree;
 use crate::utils::Mat2x2;
+use crate::utils::RationalMap;
 use alloc::boxed::Box;
 use ark_ff::batch_inversion;
 use ark_ff::vec;
 use ark_ff::vec::Vec;
 use ark_ff::Field;
-use ark_poly::univariate::DensePolynomial;
-use ark_poly::DenseUVPolynomial;
 use ark_poly::Polynomial;
 use ark_serialize::CanonicalDeserialize;
 use ark_serialize::CanonicalSerialize;
@@ -14,31 +13,6 @@ use ark_serialize::Compress;
 use ark_serialize::Valid;
 use core::cmp::Ordering;
 use core::iter::zip;
-
-#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
-pub struct RationalMap<F: Field> {
-    pub numerator: DensePolynomial<F>,
-    pub denominator: DensePolynomial<F>,
-}
-
-impl<F: Field> RationalMap<F> {
-    pub fn new(numerator: &[F], denominator: &[F]) -> Self {
-        let numerator = DensePolynomial::from_coefficients_slice(numerator);
-        let denominator = DensePolynomial::from_coefficients_slice(denominator);
-        Self {
-            numerator,
-            denominator,
-        }
-    }
-
-    pub fn map(&self, x: &F) -> Option<F> {
-        Some(self.numerator.evaluate(x) * self.denominator.evaluate(x).inverse()?)
-    }
-
-    pub fn zero() -> Self {
-        Self::new(&[], &[F::one()])
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Moiety {

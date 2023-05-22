@@ -364,6 +364,31 @@ pub fn two_adicity<C: WeierstrassCurve>(p: Point<C>) -> Option<u32> {
     None
 }
 
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
+pub struct RationalMap<F: Field> {
+    pub numerator: DensePolynomial<F>,
+    pub denominator: DensePolynomial<F>,
+}
+
+impl<F: Field> RationalMap<F> {
+    pub fn new(numerator: &[F], denominator: &[F]) -> Self {
+        let numerator = DensePolynomial::from_coefficients_slice(numerator);
+        let denominator = DensePolynomial::from_coefficients_slice(denominator);
+        Self {
+            numerator,
+            denominator,
+        }
+    }
+
+    pub fn map(&self, x: &F) -> Option<F> {
+        Some(self.numerator.evaluate(x) * self.denominator.evaluate(x).inverse()?)
+    }
+
+    pub fn zero() -> Self {
+        Self::new(&[], &[F::one()])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

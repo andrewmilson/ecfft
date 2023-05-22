@@ -1,7 +1,7 @@
-use crate::fftree::RationalMap;
 use crate::utils::find_roots;
 use crate::utils::is_odd;
 use crate::utils::two_adicity;
+use crate::utils::RationalMap;
 use crate::FFTree;
 use ark_ff::vec;
 use ark_ff::vec::Vec;
