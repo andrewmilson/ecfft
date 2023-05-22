@@ -178,11 +178,12 @@ impl<F: Field> FFTree<F> {
         let u1 = self.extend(&u0, Moiety::S1);
         let v1 = self.extend(&v0, Moiety::S1);
 
-        self.xnn_s
-            .array_chunks()
-            .enumerate()
-            .flat_map(|(i, [s0, s1])| [u0[i] + v0[i] * s0, u1[i] + v1[i] * s1])
-            .collect()
+        let mut res = Vec::new();
+        for i in 0..n / 2 {
+            res.push(u0[i] + v0[i] * self.xnn_s[i * 2]);
+            res.push(u1[i] + v1[i] * self.xnn_s[i * 2 + 1]);
+        }
+        res
     }
 
     /// Converts from coefficient to evaluation representation of a polynomial
@@ -230,15 +231,15 @@ impl<F: Field> FFTree<F> {
 
         let u0: Vec<F> = self
             .modular_reduce_impl(evals, &self.xnn_s, &self.z0z0_rem_xnn_s)
-            .array_chunks()
-            .map(|[u0, _]| *u0)
+            .into_iter()
+            .step_by(2)
             .collect();
 
         let subtree = self.subtree().unwrap();
         let mut a = subtree.exit_impl(&u0);
 
-        let xnn0_inv = self.xnn_s_inv.array_chunks().map(|[xnn0, _]| xnn0);
-        let e0 = evals.array_chunks().map(|[e0, _]| e0);
+        let xnn0_inv = self.xnn_s_inv.iter().step_by(2);
+        let e0 = evals.iter().step_by(2);
         let v0: Vec<F> = zip(zip(e0, u0), xnn0_inv)
             .map(|((&e0, u0), xnn0_inv)| (e0 - u0) * xnn0_inv)
             .collect();
@@ -419,11 +420,7 @@ impl<F: Field> FFTree<F> {
 
                 // compute z1_s in O(n log^2 n) - .vanish() uses z0_s1
                 let z1_s = tree.vanish(&s1);
-                tree.z1_s0 = z1_s.array_chunks().map(|[z1_s0, _]| *z1_s0).collect();
-
-                // Precompute evaluation tables <Z_0^2 rem X^(n/2) ≀ S> and
-                // <Z_1^2 rem X^(n/2) ≀ S> using our partial FFTree.
-                {}
+                tree.z1_s0 = z1_s.into_iter().step_by(2).collect();
             }
             Ordering::Equal => {
                 // base cases
@@ -527,8 +524,7 @@ impl<F: Field> FFTree<F> {
 
 #[cfg(test)]
 impl<F: Field> FFTree<F> {
-    // TODO: maybe convert to method to get subtree of size n?
-    // this could be used to simplify public algorithm interfaces on FFTree as well
+    // TODO: maybe remove
     pub(crate) fn eval_domain(&self) -> &[F] {
         self.f.leaves()
     }

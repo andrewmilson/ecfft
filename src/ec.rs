@@ -13,13 +13,13 @@ use ark_poly::DenseUVPolynomial;
 use ark_serialize::CanonicalDeserialize;
 use ark_serialize::CanonicalSerialize;
 use ark_serialize::Valid;
+use core::fmt::Debug;
 use core::ops::Add;
 use core::ops::AddAssign;
 use core::ops::Mul;
 use core::ops::Neg;
 use num_bigint::BigUint;
 use num_integer::Integer;
-use std::fmt::Debug;
 
 /// Good curve from ECFFT Part II
 /// <https://www.math.toronto.edu/swastik/ECFFT2.pdf>
@@ -313,7 +313,7 @@ pub trait WeierstrassCurve:
 
 /// Defines an isogeny between curves:
 /// ϕ(x, y) = (r(x), g(x) + h(x) * y)
-// TODO: domain and codomain must be part of the same curve model
+// TODO: r, g and h are pretty confusing symbols
 #[derive(Clone, Debug, CanonicalDeserialize, CanonicalSerialize)]
 pub struct Isogeny<C: WeierstrassCurve> {
     pub domain: C,

@@ -1,5 +1,3 @@
-#![feature(array_chunks, let_chains)]
-
 extern crate alloc;
 
 pub mod ec;
@@ -29,7 +27,7 @@ pub mod secp256k1 {
     use ark_ff::MontFp as F;
     use ark_ff::Zero;
 
-    /// Secp256k1 field
+    /// Secp256k1's field
     #[derive(MontConfig)]
     #[modulus = "115792089237316195423570985008687907853269984665640564039457584007908834671663"]
     #[generator = "3"]

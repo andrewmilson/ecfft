@@ -192,7 +192,7 @@ fn cyclic_two_sylow_subgroup<F: Field>(a: F, bb: F) -> (u32, Option<F>) {
     let discriminant = a.square() - bb.double().double();
     assert!(!discriminant.is_zero());
 
-    if let Some(b) = bb.sqrt() && discriminant.sqrt().is_none() {
+    if let (Some(b), None) = (bb.sqrt(), discriminant.sqrt()) {
         // 2-sylow subgroup is cyclic
         let p4_x = match ((a + b.double()).sqrt(), (a - b.double()).sqrt()) {
             (Some(_), _) => b,
