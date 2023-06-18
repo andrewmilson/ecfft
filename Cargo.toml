@@ -6,6 +6,7 @@ authors = ["Andrew Milson <andrew.j.milson@gmail.com>"]
 keywords = ["cryptography", "finite-fields", "elliptic-curves", "fft"]
 categories = ["cryptography"]
 version = "0.1.0"
+license = "MIT"
 edition = "2021"
 
 [[bench]]
